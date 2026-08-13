@@ -29,12 +29,6 @@ QUÉ ESTAMOS VERIFICANDO
 # TODO(1): importa torch.
 #          Pista: una línea. Si esto ya truena, el problema es la instalación,
 #          no tu código — y saberlo ya es información útil.
-import os, nvidia
-
-for sub in ("cublas", "cudnn"):
-    d = os.path.join(nvidia.__path__[0], sub, "bin")
-    assert os.path.isdir(d), f"falta {d} — ¿instalaste nvidia-{sub}-cu12?"
-    os.add_dll_directory(d)
 
 import torch
 
