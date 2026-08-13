@@ -1,0 +1,44 @@
+# Entorno virtual — cientos de MB regenerables
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Modelos y pesos — Git no está hecho para binarios grandes
+*.bin
+*.pt
+*.pth
+*.onnx
+*.gguf
+models/
+
+# Audio: NUNCA sube audio de entrevistas reales
+*.wav
+*.mp3
+*.flac
+*.m4a
+grabaciones/
+
+# Credenciales — la primera línea de defensa, no la única.
+# Un archivo ignorado sigue siendo un archivo: no pegues secretos en el código
+# "porque .gitignore lo tapa". Lo que entra al historial no sale nunca.
+.env
+.env.*
+*.key
+*.pem
+secrets.json
+
+# Resultados de medición locales (cada máquina tiene los suyos)
+benchmarks/*.local.json
+
+# Editor / SO
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
