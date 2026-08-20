@@ -32,6 +32,7 @@ QUÉ ESTAMOS VERIFICANDO
 
 import torch
 
+
 def verificar_gpu() -> bool:
     """Comprueba que PyTorch tenga CUDA y reporta la GPU.
 
@@ -94,7 +95,7 @@ def probar_microfono() -> None:
         print(f">> {texto}")
 
     grabador = AudioToTextRecorder(
-        model="tiny",       # el más chico y más impreciso que hay. A propósito.
+        model="tiny",  # el más chico y más impreciso que hay. A propósito.
         language="en",
         device="cuda",
         # TODO(6): pon el compute_type que corresponde a TU hardware.

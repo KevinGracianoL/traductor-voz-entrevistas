@@ -1,0 +1,8 @@
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# E/F: errores base + pyflakes | I: ordena imports (reemplaza isort)
+# UP: moderniza sintaxis vieja | B: bugbear, caza bugs comunes
