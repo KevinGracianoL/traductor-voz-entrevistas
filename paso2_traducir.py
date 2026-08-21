@@ -46,9 +46,13 @@ def instalar_idioma(origen: str, destino: str) -> None:
     # TODO(2): instálalo (lo mismo que ya sabías hacer).
     argostranslate.package.install_from_path(paquete.download())
 
-    prueba = traducir("hello" if origen == "en" else "hola", origen, destino)
-    # TODO: si `prueba` sale vacía o repetida, el modelo quedó corrupto
-    assert prueba, f"modelo {origen}->{destino} corrupto: {prueba!r}"
+    palabra = "hello" if origen == "en" else "hola"
+    prueba = traducir(palabra, origen, destino)
+
+    # Un modelo roto devuelve la entrada intacta o basura larga y repetida.
+    assert prueba and prueba != palabra and len(prueba) < 40, (
+        f"modelo {origen}->{destino} corrupto: {prueba!r}"
+    )
 
 
 def traducir(texto: str, origen: str, destino: str) -> str:
