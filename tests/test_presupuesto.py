@@ -98,3 +98,13 @@ def test_degradar_configuracion_nombre_invalido_raise() -> None:
     etapas = {"asr": 500.0, "traduccion": 150.0, "tts": 300.0}
     with pytest.raises(ValueError, match="etapa desconocida"):
         degradar_configuracion(etapas, 800.0, ["invalido"])
+
+
+def test_degradar_configuracion_orden_vacio_no_rompe() -> None:
+    """Orden vacío: progreso nunca True, break mata mutante break->return."""
+    etapas = {"asr": 500.0, "traduccion": 150.0, "tts": 300.0}
+    resultado = degradar_configuracion(etapas, 10.0, [])
+    # Debe devolver dict (no None del mutante return) y ser el mejor esfuerzo
+    assert isinstance(resultado, dict)
+    assert resultado == etapas
+    assert cabe_en_presupuesto(resultado, 10.0) is False
