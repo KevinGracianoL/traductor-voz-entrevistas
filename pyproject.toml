@@ -16,9 +16,12 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-addopts = "-q --cov=latencia --cov-report=term-missing --cov-fail-under=90"
+addopts = "-q --cov=latencia --cov=audio --cov-report=term-missing --cov-fail-under=90"
 
 [tool.mutmut]
-source_paths = ["latencia/"]
+source_paths = ["latencia/", "audio/"]
 pytest_add_cli_args_test_selection = ["tests/"]
 pytest_add_cli_args = ["--no-cov"]
+# patron_virtual default es equivalente por .lower() -> inmatable
+# Los 2 raise son textos de error no verificables -> patrones específicos de audio/virtual.py
+do_not_mutate_patterns = ['patron_virtual: str = "', 'ruta vacía', 'sin dispositivo virtual']
