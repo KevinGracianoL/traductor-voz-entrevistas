@@ -29,7 +29,7 @@ def clasificar_dispositivos(
 
 def seleccionar_ruta(
     dispositivos: list[str],
-    patron_virtual: str = "cable",
+    patron_virtual: str = "cable",  # pragma: no mutate
 ) -> dict[str, str | None]:
     """Elige ruta determinista por nombre (ADR-009).
 

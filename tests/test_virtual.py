@@ -18,6 +18,11 @@ def test_es_virtual_detecta_cable() -> None:
     assert es_virtual("cable output") is True
 
 
+def test_es_virtual_detecta_voicemeeter_por_vb_audio() -> None:
+    """VoiceMeeter no dice 'cable' ni 'virtual': sólo lo salva la cláusula vb-audio."""
+    assert es_virtual("VoiceMeeter Output (VB-Audio VoiceMeeter VAIO)") is True
+
+
 def test_clasificar_separa() -> None:
     nombres = ["CABLE Input", "Realtek Mic", "Virtual Speaker", "Auriculares"]
     res = clasificar_dispositivos(nombres)
@@ -68,6 +73,11 @@ def test_validar_ruta_sin_virtual_raise() -> None:
 def test_validar_ruta_vacia_raise() -> None:
     with pytest.raises(ValueError, match="ruta vacía"):
         validar_ruta({"entrevistador": None, "usuario": None})
+
+
+def test_validar_ruta_virtual_sin_mic_no_lanza() -> None:
+    """Virtual presente y mic ausente es válido: el modo principal funciona."""
+    validar_ruta({"entrevistador": "CABLE Output", "usuario": None})
 
 
 def test_describir_ruta_formato() -> None:

@@ -54,7 +54,8 @@ def degradar_configuracion(
 
     resultado = etapas.copy()
     # Itera en ciclos completos para converger; cada etapa puede degradarse varias veces
-    max_ciclos = 10  # pragma: no mutate - tope arbitrario, no bug si cambia a 11
+    # tope arbitrario, no bug si cambia a 11
+    max_ciclos = 10  # pragma: no mutate
     for _ in range(max_ciclos):
         if cabe_en_presupuesto(resultado, techo_ms):
             break
