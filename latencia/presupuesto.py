@@ -15,7 +15,13 @@ def cabe_en_presupuesto(etapas: dict[str, float], techo_ms: float) -> bool:
 
 
 def etapa_mas_lenta(etapas: dict[str, float]) -> str:
-    """Nombre de la etapa con mayor latencia."""
+    """Nombre de la etapa con mayor latencia.
+
+    Raises:
+        ValueError: si el dict está vacío.
+    """
+    if not etapas:
+        raise ValueError("etapas vacío: no hay etapa más lenta")
     return max(etapas, key=etapas.__getitem__)
 
 
@@ -34,12 +40,31 @@ def degradar_configuracion(
     No modifica el dict original. Devuelve una copia con valores reducidos.
     La reducción es un placeholder: en el Paso 3 real esto cambiará
     tamaño de modelo, beam size, etc.
+
+    Itera en ciclos sobre orden_degradacion hasta caber o hasta que no quede
+    margen de mejora. Si el techo es imposible, devuelve el mejor esfuerzo
+    (caller debe verificar con cabe_en_presupuesto).
+
+    Raises:
+        ValueError: si algún nombre en orden_degradacion no existe en etapas.
     """
-    resultado = etapas.copy()
     for nombre in orden_degradacion:
+        if nombre not in etapas:
+            raise ValueError(f"etapa desconocida en orden_degradacion: {nombre!r}")
+
+    resultado = etapas.copy()
+    # Itera en ciclos completos para converger; cada etapa puede degradarse varias veces
+    max_ciclos = 10
+    for _ in range(max_ciclos):
         if cabe_en_presupuesto(resultado, techo_ms):
             break
-        if nombre in resultado:
-            # Placeholder: reduce 20% la latencia simulando modelo más chico
+        progreso = False
+        for nombre in orden_degradacion:
+            if cabe_en_presupuesto(resultado, techo_ms):
+                break
+            # reduce 20% la latencia simulando modelo más chico
             resultado[nombre] *= 0.8
+            progreso = True
+        if not progreso:
+            break
     return resultado

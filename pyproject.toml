@@ -16,7 +16,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-addopts = "-q --cov=latencia --cov-report=term-missing"
+addopts = "-q --cov=latencia --cov-report=term-missing --cov-fail-under=90"
 
 [tool.mutmut]
 source_paths = ["latencia/"]

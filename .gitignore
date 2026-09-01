@@ -36,6 +36,13 @@ secrets.json
 # Resultados de medición locales (cada máquina tiene los suyos)
 benchmarks/*.local.json
 
+# Mutmut / coverage — regenerables, no van al repo
+mutants/
+.mutmut-cache/
+.coverage
+htmlcov/
+coverage.xml
+
 # Editor / SO
 .vscode/
 .idea/

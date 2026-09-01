@@ -57,7 +57,7 @@ def instalar_idioma(origen: str, destino: str) -> None:
 def traducir(texto: str, origen: str, destino: str) -> str:
     """origen -> destino."""
     # TODO(3): argostranslate.translate.translate(texto, origen, destino)
-    return argostranslate.translate.translate(texto, origen, destino)  # type: ignore[no-any-return]
+    return str(argostranslate.translate.translate(texto, origen, destino))
 
 
 if __name__ == "__main__":
