@@ -46,21 +46,21 @@ def test_medir_tiempo_lambda_con_args() -> None:
 
 
 def test_medir_tiempo_mide_aun_si_func_lanza() -> None:
-    """Si func lanza, elapsed igual se mide y excepción se propaga."""
+    """Si func lanza, elapsed se adjunta a la excepción para diagnóstico."""
 
     def falla() -> None:
         raise RuntimeError("ASR se cayo")
 
     clock = _reloj_falso([1.0, 1.9])
-    with pytest.raises(RuntimeError, match="ASR se cayo"):
+    with pytest.raises(RuntimeError, match="ASR se cayo") as excinfo:
         medir_tiempo(falla, clock=clock)
-    # Verifica que clock se consumió dos veces (t0 y t1) aun con excepción
-    # Si no, el segundo next() fallaría por StopIteration en siguiente uso
-    # Probamos con un reloj que se agota justo en 2 llamadas
-    clock2 = _reloj_falso([5.0, 5.5])
-    with pytest.raises(RuntimeError):
+    # El caller recupera duración aun con fallo: 0.9s = 900ms
+    assert excinfo.value.elapsed_ms == pytest.approx(900.0)  # type: ignore[attr-defined]
+    # Mata mutantes: elapsed None, *1000->/1000, -t0 -> +t0, *1000->*1001
+    clock2 = _reloj_falso([2.0, 2.5])
+    with pytest.raises(RuntimeError) as excinfo2:
         medir_tiempo(falla, clock=clock2)
-    # Si no hubiera llamado t1, quedaría un valor sin consumir y no fallaría
+    assert excinfo2.value.elapsed_ms == pytest.approx(500.0)  # type: ignore[attr-defined]
 
 
 def test_medir_tiempo_no_colisiona_con_kwarg_clock() -> None:
@@ -93,6 +93,11 @@ def test_agregar_medicion_nueva_etapa() -> None:
 def test_agregar_medicion_negativo_raise() -> None:
     with pytest.raises(ValueError, match="negativo"):
         agregar_medicion({}, "asr", -5.0)
+
+
+def test_agregar_medicion_acepta_cero() -> None:
+    """0 ms es válido: relojes de baja resolución lo devuelven."""
+    assert agregar_medicion({}, "asr", 0.0)["asr"] == [0.0]
 
 
 def test_resumen_estadisticas_basico() -> None:
@@ -128,3 +133,10 @@ def test_resumen_estadisticas_p95_con_suficientes_muestras() -> None:
     assert res["asr"]["p95"] is not None
     assert res["asr"]["p95"] == 19.0  # ceil(0.95*20)=19 -> idx18 -> 19
     assert res["asr"]["p50"] == pytest.approx(10.5)  # median 1..20
+
+
+def test_resumen_estadisticas_salta_etapa_vacia_y_sigue() -> None:
+    """Una etapa sin datos no debe cortar el resumen de las siguientes."""
+    res = resumen_estadisticas({"asr": [], "tts": [100.0, 200.0]})
+    assert "asr" not in res
+    assert res["tts"]["count"] == 2.0

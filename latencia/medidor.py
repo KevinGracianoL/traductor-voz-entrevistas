@@ -30,8 +30,8 @@ def medir_tiempo(
     t0 = clock()
     try:
         resultado = func()
-    except BaseException:
-        elapsed_ms = (clock() - t0) * 1000.0
+    except BaseException as exc:  # noqa: BLE001
+        exc.elapsed_ms = (clock() - t0) * 1000.0  # type: ignore[attr-defined]
         raise
     else:
         elapsed_ms = (clock() - t0) * 1000.0
@@ -70,12 +70,10 @@ def resumen_estadisticas(
         n = len(ordenados)
         mean = statistics.fmean(ordenados)
         p50 = statistics.median(ordenados)
-        # p95 solo informativo con n>=20, si no None
+        # p95 solo informativo con n>=20, si no None (con n<20 p95==max)
         p95: float | None
         if n >= 20:
-            # statistics.quantiles n=20 -> 19 cut points, p95 ~ 95th percentile
-            # Usamos método simple pero honesto: ceil(0.95*n)-1 solo si n>=20
-            p95_idx = max(0, min(n - 1, math.ceil(0.95 * n) - 1))
+            p95_idx = math.ceil(0.95 * n) - 1
             p95 = ordenados[p95_idx]
         else:
             p95 = None

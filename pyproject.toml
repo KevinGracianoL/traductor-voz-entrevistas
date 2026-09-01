@@ -20,4 +20,5 @@ addopts = "-q --cov=latencia --cov-report=term-missing --cov-fail-under=90"
 
 [tool.mutmut]
 source_paths = ["latencia/"]
-pytest_add_cli_args_test_selection = ["tests/", "--no-cov"]
+pytest_add_cli_args_test_selection = ["tests/"]
+pytest_add_cli_args = ["--no-cov"]
