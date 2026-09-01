@@ -22,7 +22,5 @@ addopts = "-q --cov=latencia --cov=audio --cov-report=term-missing --cov-fail-un
 source_paths = ["latencia/", "audio/"]
 pytest_add_cli_args_test_selection = ["tests/"]
 pytest_add_cli_args = ["--no-cov"]
-# Los textos de mensajes/log no son conducta verificable:
-# fijarlos congelaría la redacción sin proteger nada.
 # patron_virtual default es equivalente por .lower() -> inmatable
-do_not_mutate_patterns = ['raise ValueError', 'or "—', 'patron_virtual: str = "']
+do_not_mutate_patterns = ['patron_virtual: str = "']
