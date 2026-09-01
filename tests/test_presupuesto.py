@@ -78,19 +78,14 @@ def test_degradar_configuracion_no_modifica_original() -> None:
 
 
 def test_degradar_configuracion_converge_con_techo_exigente() -> None:
-    """Techo 500 requiere varias degradaciones; debe iterar hasta caber si es posible.
-
-    500+150+300=950. Con ciclos, debe bajar lo suficiente para caber en 500
-    si se insiste lo bastante (0.8^n). Verifica que no se rinde tras una sola pasada.
-    """
+    """Techo 500 requiere varias degradaciones; debe iterar hasta caber."""
     etapas = {"asr": 500.0, "traduccion": 150.0, "tts": 300.0}
     techo = 500.0
     resultado = degradar_configuracion(etapas, techo, ["tts", "traduccion", "asr"])
     # Debe haber degradado múltiples veces, no quedarse en 760 (una sola pasada)
     assert sum(resultado.values()) < 760.0
-    # Si aun no cabe tras max_ciclos, caller debe verificar; no mentir
-    # Aquí documentamos el comportamiento: devuelve mejor esfuerzo
-    assert cabe_en_presupuesto(resultado, techo) is True or sum(resultado.values()) < 950.0
+    assert cabe_en_presupuesto(resultado, techo) is True
+    assert sum(resultado.values()) == pytest.approx(486.4)
 
 
 def test_degradar_configuracion_nombre_invalido_raise() -> None:
@@ -110,11 +105,9 @@ def test_degradar_configuracion_orden_vacio_no_rompe() -> None:
     assert cabe_en_presupuesto(resultado, 10.0) is False
 
 
-def test_degradar_configuracion_max_ciclos_exactitud() -> None:
-    """Mata mutante max_ciclos 10->11: techo imposible debe degradar exactamente 10 veces."""
-    etapas = {"tts": 100.0}
-    # techo 0 imposible: 100*0.8^10 = 10.737..., con 11 sería 8.589...
-    resultado = degradar_configuracion(etapas, 0.0, ["tts"])
-    esperado_10 = 100.0 * (0.8**10)
-    assert resultado["tts"] == pytest.approx(esperado_10)
-    assert resultado["tts"] != pytest.approx(100.0 * (0.8**11))
+def test_degradar_configuracion_termina_con_techo_imposible() -> None:
+    """Techo inalcanzable: termina (no cuelga) y devuelve el mejor esfuerzo."""
+    resultado = degradar_configuracion({"tts": 100.0}, 0.0, ["tts"])
+    assert resultado["tts"] < 100.0  # degradó
+    assert resultado["tts"] > 0.0  # no aniquiló
+    assert cabe_en_presupuesto(resultado, 0.0) is False  # y no miente
