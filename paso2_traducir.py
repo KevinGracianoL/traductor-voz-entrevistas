@@ -50,15 +50,14 @@ def instalar_idioma(origen: str, destino: str) -> None:
     prueba = traducir(palabra, origen, destino)
 
     # Un modelo roto devuelve la entrada intacta o basura larga y repetida.
-    assert prueba and prueba != palabra and len(prueba) < 40, (
-        f"modelo {origen}->{destino} corrupto: {prueba!r}"
-    )
+    if not (prueba and prueba != palabra and len(prueba) < 40):
+        raise RuntimeError(f"modelo {origen}->{destino} corrupto: {prueba!r}")
 
 
 def traducir(texto: str, origen: str, destino: str) -> str:
     """origen -> destino."""
     # TODO(3): argostranslate.translate.translate(texto, origen, destino)
-    return argostranslate.translate.translate(texto, origen, destino)
+    return str(argostranslate.translate.translate(texto, origen, destino))
 
 
 if __name__ == "__main__":
