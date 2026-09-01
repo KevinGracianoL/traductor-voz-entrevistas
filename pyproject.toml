@@ -3,6 +3,21 @@ line-length = 100
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
-# E/F: errores base + pyflakes | I: ordena imports (reemplaza isort)
-# UP: moderniza sintaxis vieja | B: bugbear, caza bugs comunes
+select = ["E", "F", "B", "SIM", "UP", "I", "S"]
+# E,F = errores base | B = bugbear (bugs reales) | SIM = simplificaciones
+# UP  = sintaxis moderna | I = imports ordenados | S = seguridad (bandit)
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.mypy]
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+addopts = "-q --cov=latencia --cov-report=term-missing"
+
+[tool.mutmut]
+source_paths = ["latencia/"]
+pytest_add_cli_args_test_selection = ["tests/"]
