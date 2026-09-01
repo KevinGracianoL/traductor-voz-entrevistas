@@ -184,9 +184,11 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 
 ## 🗺️ Roadmap
 
-- [x] Paso 3 — Medidor honesto (p95, `exc.elapsed_ms`)
-- [ ] Paso 4 — Audio virtual Windows + warm-up CUDA descartado
-- [ ] Paso 5 — Teleprompter + deploy VM (nginx + TLS)
+- [x] **Paso 1 — Hardware** — CUDA + VRAM + mic → texto (`src/traductor/hardware/`, `audio/captura.py`)
+- [x] **Paso 2 — Traducción** — `argos` offline EN↔ES (`src/traductor/traduccion/`)
+- [x] **Paso 3 — Medición** — presupuesto + medidor honesto (`p95`, `exc.elapsed_ms`, `139/139` mutantes)
+- [x] **Paso 4 — Audio virtual** — ruta por nombre, VB-CABLE (`src/traductor/audio/virtual.py`)
+- [ ] **Paso 5 — Teleprompter** — UI en vivo + deploy micro VM (nginx + TLS) — *siguiente*
 - [ ] Fase 2 — TTS opcional
 - [ ] Fase 3 — Conversión de voz (timbre de Kevin)
 
