@@ -9,12 +9,11 @@ import os
 
 os.environ.setdefault("ARGOS_COMPUTE_TYPE", "default")
 
-import argostranslate.package
-import argostranslate.translate
-
 
 def instalar_idioma(origen: str, destino: str) -> None:
     """Baja e instala el paquete origen->destino. Idempotente."""
+    import argostranslate.package
+
     argostranslate.package.update_package_index()
     disponibles = argostranslate.package.get_available_packages()
 
@@ -37,4 +36,6 @@ def instalar_idioma(origen: str, destino: str) -> None:
 
 def traducir(texto: str, origen: str, destino: str) -> str:
     """Traduce origen -> destino."""
+    import argostranslate.translate
+
     return str(argostranslate.translate.translate(texto, origen, destino))
