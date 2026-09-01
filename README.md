@@ -30,6 +30,8 @@
 
 > **Privacidad:** todo corre en tu laptop. El audio nunca sale de la máquina.
 
+**⏸️ Pausa — continuamos en ~6 horas con Paso 5 (teleprompter + deploy).**
+
 </div>
 
 ---
@@ -48,9 +50,9 @@ En una entrevista en inglés, un error de traducción no es un bug — es la res
 |---|---|---|
 | **1 — Hardware** | ✅ | `torch.cuda.is_available()`, VRAM libre/total, `RealtimeSTT` `tiny` `int8` (TU117) |
 | **2 — Traducción** | ✅ | `argos-translate` `EN↔ES` offline en CPU, `ARGOS_COMPUTE_TYPE=default` |
-| **3 — Medición** | ✅ | `latencia/presupuesto.py` + `medidor.py` (reloj inyectable, `p50` mediana, `p95=None` si `n<20`) |
-| **4 — Audio virtual** | 🔜 | Mic/altavoz virtual en Windows |
-| **5 — Teleprompter** | 🔜 | UI en vivo + deploy micro VM |
+| **3 — Medición** | ✅ | `src/traductor/latencia/` (reloj inyectable, `p50` mediana, `p95=None` si `n<20`) |
+| **4 — Audio virtual** | ✅ | `src/traductor/audio/virtual.py` (ruta por nombre, VB-CABLE, 139/139 mutantes) |
+| **5 — Teleprompter** | ⏳ | UI en vivo + deploy micro VM — *siguiente* |
 
 ---
 
@@ -158,7 +160,7 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 | ¿Tipos encajan? | **mypy --strict** | `ignore_missing_imports` para RealtimeSTT |
 | ¿Hace lo que digo? | **pytest** | `--cov-fail-under=90` en `pyproject.toml` |
 | ¿Qué no probé? | **coverage** | `100%` |
-| ¿Detectaría un bug? | **mutmut** | `84/84` con `pytest_add_cli_args = ["--no-cov"]` |
+| ¿Detectaría un bug? | **mutmut** | `139/139` con `pytest_add_cli_args = ["--no-cov"]` |
 
 > `mutmut` necesita `fork` → WSL. En CI (Ubuntu) el gate falla si `survived > 0`. Verificado rompiendo `<=`→`<` y `*1000`→`/1000` a mano.
 
