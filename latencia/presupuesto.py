@@ -58,13 +58,9 @@ def degradar_configuracion(
     for _ in range(max_ciclos):
         if cabe_en_presupuesto(resultado, techo_ms):
             break
-        progreso = False
         for nombre in orden_degradacion:
             if cabe_en_presupuesto(resultado, techo_ms):
                 break
             # reduce 20% la latencia simulando modelo más chico
             resultado[nombre] *= 0.8
-            progreso = True
-        if not progreso:
-            break
     return resultado

@@ -41,7 +41,7 @@ def test_etapa_mas_lenta_devuelve_nombre_correcto() -> None:
 
 def test_etapa_mas_lenta_vacio_raise() -> None:
     """Dict vacío debe fallar explícito, no ValueError críptico de max()."""
-    with pytest.raises(ValueError, match="etapas vacío"):
+    with pytest.raises(ValueError, match=r"^etapas vacío: no hay etapa más lenta$"):
         etapa_mas_lenta({})
 
 
@@ -101,10 +101,20 @@ def test_degradar_configuracion_nombre_invalido_raise() -> None:
 
 
 def test_degradar_configuracion_orden_vacio_no_rompe() -> None:
-    """Orden vacío: progreso nunca True, break mata mutante break->return."""
+    """Orden vacío: debe devolver copia intacta, no None ni loop infinito."""
     etapas = {"asr": 500.0, "traduccion": 150.0, "tts": 300.0}
     resultado = degradar_configuracion(etapas, 10.0, [])
-    # Debe devolver dict (no None del mutante return) y ser el mejor esfuerzo
+    # Debe devolver dict (no None) y ser el mejor esfuerzo
     assert isinstance(resultado, dict)
     assert resultado == etapas
     assert cabe_en_presupuesto(resultado, 10.0) is False
+
+
+def test_degradar_configuracion_max_ciclos_exactitud() -> None:
+    """Mata mutante max_ciclos 10->11: techo imposible debe degradar exactamente 10 veces."""
+    etapas = {"tts": 100.0}
+    # techo 0 imposible: 100*0.8^10 = 10.737..., con 11 sería 8.589...
+    resultado = degradar_configuracion(etapas, 0.0, ["tts"])
+    esperado_10 = 100.0 * (0.8**10)
+    assert resultado["tts"] == pytest.approx(esperado_10)
+    assert resultado["tts"] != pytest.approx(100.0 * (0.8**11))
