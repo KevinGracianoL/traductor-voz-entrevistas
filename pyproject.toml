@@ -16,9 +16,9 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-addopts = "-q --cov=latencia --cov-report=term-missing --cov-fail-under=90"
+addopts = "-q --cov=latencia --cov=audio --cov-report=term-missing --cov-fail-under=90"
 
 [tool.mutmut]
-source_paths = ["latencia/"]
+source_paths = ["latencia/", "audio/"]
 pytest_add_cli_args_test_selection = ["tests/"]
 pytest_add_cli_args = ["--no-cov"]
