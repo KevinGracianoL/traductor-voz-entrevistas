@@ -21,9 +21,9 @@ jobs:
           if mutmut results | grep -q "survived"; then
             echo "mutantes sobrevivientes detectados"
             mutmut results
-            for m in $(mutmut results | grep survived | awk '{print $1}'); do
+            for m in $(mutmut results | grep survived | awk '{print $1}' | sed 's/://g'); do
               echo "--- $m ---"
-              mutmut show "$m" || true
+              mutmut show "$m" 2>&1 | head -100 || true
             done
             exit 1
           fi
