@@ -52,12 +52,12 @@ def validar_ruta(ruta: Mapping[str, str | None]) -> None:
     """
     if ruta.get("entrevistador") is None and ruta.get("usuario") is None:
         raise ValueError(
-            "ruta vacía: no hay dispositivos físicos ni virtuales"
-        )  # pragma: no mutate  # noqa: E501
+            "ruta vacía: no hay dispositivos físicos ni virtuales"  # pragma: no mutate
+        )
     if ruta.get("entrevistador") is None:
         raise ValueError(
-            "sin dispositivo virtual: instala VB-CABLE para entrevistador"
-        )  # pragma: no mutate  # noqa: E501
+            "sin dispositivo virtual: instala VB-CABLE para entrevistador"  # pragma: no mutate
+        )
 
 
 def describir_ruta(ruta: Mapping[str, str | None]) -> str:
