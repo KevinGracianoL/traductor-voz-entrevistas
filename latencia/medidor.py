@@ -24,13 +24,13 @@ def medir_tiempo(
     """Ejecuta func y mide duración en ms con reloj inyectable.
 
     clock debe devolver segundos (como perf_counter). Se multiplica a ms.
-    Mide aun si func lanza: el elapsed se calcula en finally y la excepción
-    se propaga (el caller puede capturar y aun así diagnosticar duración).
+    Mide aun si func lanza: el elapsed se adjunta a la excepción y se
+    propaga (except/else), el caller recupera con e.elapsed_ms.
     """
     t0 = clock()
     try:
         resultado = func()
-    except BaseException as exc:  # noqa: BLE001
+    except BaseException as exc:
         exc.elapsed_ms = (clock() - t0) * 1000.0  # type: ignore[attr-defined]
         raise
     else:
