@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 import pytest
 
-from latencia.medidor import (
+from traductor.latencia.medidor import (
     agregar_medicion,
     medir_tiempo,
     resumen_estadisticas,

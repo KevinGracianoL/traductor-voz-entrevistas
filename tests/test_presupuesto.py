@@ -6,7 +6,7 @@ Corren en milisegundos, sin GPU, sin audio.
 
 import pytest
 
-from latencia.presupuesto import (
+from traductor.latencia.presupuesto import (
     cabe_en_presupuesto,
     degradar_configuracion,
     etapa_mas_lenta,
