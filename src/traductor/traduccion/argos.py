@@ -1,6 +1,6 @@
 """Traducción local bidireccional con argos-translate (ADR-005).
 
-Offline, CPU, sin red. Extraído de paso2_traducir.py.
+Offline, CPU, sin red.
 """
 
 from __future__ import annotations

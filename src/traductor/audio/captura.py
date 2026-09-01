@@ -1,13 +1,9 @@
-"""Captura de micrófono con RealtimeSTT — tubo ASR.
-
-Extraído de paso1_verificar.py. Modelo tiny int8 a propósito para verificar
-que la tubería existe, no para medir calidad.
-"""
+"""Captura de micrófono con RealtimeSTT — tubo ASR."""
 
 from __future__ import annotations
 
 
-def probar_microfono() -> None:
+def probar_microfono() -> None:  # pragma: no cover
     """Micrófono → texto en pantalla, con RealtimeSTT."""
     from RealtimeSTT import AudioToTextRecorder
 

@@ -1,14 +1,11 @@
-"""Verificación de hardware — CUDA y VRAM.
-
-Extraído de paso1_verificar.py para ser importable y testeable.
-"""
+"""Verificación de hardware — CUDA y VRAM."""
 
 from __future__ import annotations
 
 import torch
 
 
-def verificar_gpu() -> bool:
+def verificar_gpu() -> bool:  # pragma: no cover
     """Comprueba que PyTorch tenga CUDA y reporta la GPU.
 
     Devuelve True solo si podemos seguir. Imprime diagnóstico para el usuario.

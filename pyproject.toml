@@ -16,7 +16,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
-addopts = "-q --cov=traductor.latencia --cov=traductor.audio.virtual --cov-report=term-missing --cov-fail-under=90"
+addopts = "-q --cov=traductor.latencia --cov=traductor.audio.virtual --cov=traductor.traduccion --cov-report=term-missing --cov-fail-under=90"
 
 [tool.mutmut]
 source_paths = ["src/traductor/"]
