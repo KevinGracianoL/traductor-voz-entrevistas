@@ -11,7 +11,7 @@
 ![Ruff](https://img.shields.io/badge/Ruff-checked-000000?style=flat-square)
 ![mypy strict](https://img.shields.io/badge/mypy-strict-2A6DB5?style=flat-square)
 ![coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen?style=flat-square)
-![mutants 84/84](https://img.shields.io/badge/mutants-84%2F84-brightgreen?style=flat-square)
+![mutants 139/139](https://img.shields.io/badge/mutants-139%2F139-brightgreen?style=flat-square)
 ![License MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)
 
 **Portafolio → [KevinGracianoL](https://github.com/KevinGracianoL) · Proyecto guía [entrenamiento-dev](https://github.com/KevinGracianoL/entrenamiento-dev) · Hecho para entrevistas reales, no demos**
@@ -78,7 +78,7 @@ flowchart LR
 | **ASR** | `RealtimeSTT` + `faster-whisper` `int8` | TU117 sin Tensor Cores → FP16 emulado, INT8 en cores enteros |
 | **Traducción** | `argos-translate` + `ctranslate2` | Offline, CPU, gratis |
 | **Medición** | `time.perf_counter` inyectable | Testeable sin hardware |
-| **Calidad** | `ruff` `mypy --strict` `pytest` `mutmut` | 100% cov, 84/84 mutantes |
+| **Calidad** | `ruff` `mypy --strict` `pytest` `mutmut` | 100% cov, 139/139 mutantes |
 
 ---
 
@@ -109,13 +109,14 @@ ruff check .; ruff format --check .; mypy .; pytest
 ## ▶️ Uso
 
 ```powershell
-python paso1_verificar.py   # → CUDA: True | GTX 1650 Ti | VRAM 3.2/4 GB | "the blue dog..." → texto
-python paso2_traducir.py    # → "Tell me about a hard bug..." ↔ "Háblame de un bug..."
+python scripts/verificar_hardware.py  # → CUDA: True | GTX 1650 Ti | VRAM 3.2/4 GB | mic → texto
+python scripts/demo_traduccion.py     # → "Tell me about a hard bug..." ↔ "Háblame de un bug..."
 ```
 
 ```python
-from latencia.presupuesto import cabe_en_presupuesto
-from latencia.medidor import medir_tiempo
+from traductor.latencia.presupuesto import cabe_en_presupuesto
+from traductor.latencia.medidor import medir_tiempo
+from traductor.traduccion.argos import traducir
 import time
 
 # ¿Cabe en 1 s?
@@ -130,16 +131,20 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 ## 📁 Estructura
 
 ```
-├── paso1_verificar.py      # CUDA + micrófono → texto
-├── paso2_traducir.py       # argos EN↔ES bidireccional
-├── latencia/
-│   ├── presupuesto.py      # ¿cabe? ¿quién es más lento? (puro cálculo)
-│   └── medidor.py          # reloj inyectable, p50/p95 honesto
-├── tests/
-│   ├── test_presupuesto.py # 13 tests — frontera inclusiva, converge
-│   └── test_medidor.py     # 13 tests — elapsed en exc, p95 None
+├── src/traductor/
+│   ├── hardware/cuda.py        # verifica GPU/VRAM
+│   ├── audio/captura.py        # mic → texto (RealtimeSTT)
+│   ├── audio/virtual.py        # ruta determinista por nombre
+│   ├── traduccion/argos.py     # EN↔ES offline
+│   └── latencia/
+│       ├── presupuesto.py      # ¿cabe? ¿quién es más lento?
+│       └── medidor.py          # reloj inyectable, p50/p95 honesto
+├── scripts/
+│   ├── verificar_hardware.py   # wrapper fino hardware
+│   └── demo_traduccion.py      # wrapper fino traducción
+├── tests/                      # 39 tests, 100% cov, 139/139 mutantes
 ├── .github/workflows/ci.yml
-├── pyproject.toml          # ruff + mypy strict + pytest --cov-fail-under=90 + mutmut --no-cov
+├── pyproject.toml              # ruff + mypy strict + pytest --cov-fail-under=90
 └── requirements.txt
 ```
 

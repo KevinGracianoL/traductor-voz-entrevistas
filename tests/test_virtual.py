@@ -2,7 +2,7 @@
 
 import pytest
 
-from audio.virtual import (
+from traductor.audio.virtual import (
     clasificar_dispositivos,
     describir_ruta,
     es_virtual,
