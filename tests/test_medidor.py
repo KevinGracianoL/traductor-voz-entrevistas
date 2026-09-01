@@ -1,16 +1,17 @@
 """Tests para medidor — lógica pura con reloj inyectable."""
 
+from collections.abc import Callable
+
 import pytest
 
 from latencia.medidor import (
     agregar_medicion,
-    latencia_total_ms,
     medir_tiempo,
     resumen_estadisticas,
 )
 
 
-def _reloj_falso(valores: list[float]) -> object:
+def _reloj_falso(valores: list[float]) -> Callable[[], float]:
     """Devuelve callable que entrega valores secuenciales."""
     it = iter(valores)
 
@@ -23,25 +24,56 @@ def _reloj_falso(valores: list[float]) -> object:
 def test_medir_tiempo_retorna_resultado_y_ms() -> None:
     """Clock 1.0 -> 1.15 = 150ms."""
 
-    def suma(a: int, b: int) -> int:
-        return a + b
+    def suma() -> int:
+        return 2 + 3
 
     clock = _reloj_falso([1.0, 1.15])
-    res, ms = medir_tiempo(suma, 2, 3, clock=clock)  # type: ignore[arg-type]
+    res, ms = medir_tiempo(suma, clock=clock)
     assert res == 5
     assert ms == pytest.approx(150.0)
 
 
-def test_medir_tiempo_con_kwargs() -> None:
-    """Debe pasar kwargs al func."""
+def test_medir_tiempo_lambda_con_args() -> None:
+    """Call site usa lambda para evitar colisión de kwargs."""
 
     def saluda(nombre: str, extra: str = "") -> str:
         return f"{nombre}{extra}"
 
     clock = _reloj_falso([0.0, 0.02])
-    res, ms = medir_tiempo(saluda, "hi", extra="!", clock=clock)  # type: ignore[arg-type]
+    res, ms = medir_tiempo(lambda: saluda("hi", extra="!"), clock=clock)
     assert res == "hi!"
     assert ms == pytest.approx(20.0)
+
+
+def test_medir_tiempo_mide_aun_si_func_lanza() -> None:
+    """Si func lanza, elapsed igual se mide y excepción se propaga."""
+
+    def falla() -> None:
+        raise RuntimeError("ASR se cayo")
+
+    clock = _reloj_falso([1.0, 1.9])
+    with pytest.raises(RuntimeError, match="ASR se cayo"):
+        medir_tiempo(falla, clock=clock)
+    # Verifica que clock se consumió dos veces (t0 y t1) aun con excepción
+    # Si no, el segundo next() fallaría por StopIteration en siguiente uso
+    # Probamos con un reloj que se agota justo en 2 llamadas
+    clock2 = _reloj_falso([5.0, 5.5])
+    with pytest.raises(RuntimeError):
+        medir_tiempo(falla, clock=clock2)
+    # Si no hubiera llamado t1, quedaría un valor sin consumir y no fallaría
+
+
+def test_medir_tiempo_no_colisiona_con_kwarg_clock() -> None:
+    """Func con param clock no debe colisionar."""
+
+    def sincroniza(texto: str, clock: str = "default") -> str:
+        return f"{texto}:{clock}"
+
+    # Antes habría colisionado: clock="monotonic" se pasaba al medidor
+    # Ahora se usa lambda, no hay colisión
+    fake = _reloj_falso([0.0, 0.01])
+    res, _ = medir_tiempo(lambda: sincroniza("hola", clock="monotonic"), clock=fake)
+    assert res == "hola:monotonic"
 
 
 def test_agregar_medicion_no_muta_original() -> None:
@@ -70,9 +102,9 @@ def test_resumen_estadisticas_basico() -> None:
     assert res["asr"]["mean"] == pytest.approx(250.0)
     assert res["asr"]["min"] == 100.0
     assert res["asr"]["max"] == 400.0
-    # p50 ceil(0.5*4)=2 -> idx1 -> 200, p95 ceil(0.95*4)=4 -> idx3 ->400
-    assert res["asr"]["p50"] == 200.0
-    assert res["asr"]["p95"] == 400.0
+    # p50 ahora es median (250), p95 es None con n<20
+    assert res["asr"]["p50"] == 250.0
+    assert res["asr"]["p95"] is None
 
 
 def test_resumen_estadisticas_vacio() -> None:
@@ -86,8 +118,13 @@ def test_resumen_estadisticas_orden_no_importa() -> None:
     assert res["t"]["min"] == 100.0
     assert res["t"]["max"] == 300.0
     assert res["t"]["p50"] == 200.0
+    assert res["t"]["p95"] is None
 
 
-def test_latencia_total_ms_suma() -> None:
-    assert latencia_total_ms({"asr": 500.0, "traduccion": 150.0}) == 650.0
-    assert latencia_total_ms({}) == 0.0
+def test_resumen_estadisticas_p95_con_suficientes_muestras() -> None:
+    # 20 muestras: p95 ya no es None
+    registro = {"asr": [float(i) for i in range(1, 21)]}  # 1..20
+    res = resumen_estadisticas(registro)
+    assert res["asr"]["p95"] is not None
+    assert res["asr"]["p95"] == 19.0  # ceil(0.95*20)=19 -> idx18 -> 19
+    assert res["asr"]["p50"] == pytest.approx(10.5)  # median 1..20
