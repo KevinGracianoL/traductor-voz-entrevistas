@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teleprompter — Traductor</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="container">
+  <h1>🎙️ Teleprompter</h1>
+  <div id="feed"></div>
+  <div class="hint">WS: <span id="ws-status">conectando...</span> — POST fallback en <code>/api/transcripcion</code></div>
+</div>
+<script>
+const feed = document.getElementById('feed');
+const status = document.getElementById('ws-status');
+let autoScroll = true;
+
+// Detecta si el usuario está al fondo
+feed.addEventListener('scroll', () => {
+  const atBottom = feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 30;
+  autoScroll = atBottom;
+});
+
+function addTranscripcion(en, es) {
+  const div = document.createElement('div');
+  div.className = 'entry';
+  div.innerHTML = `<div class="en">${en}</div><div class="es">${es}</div>`;
+  feed.appendChild(div);
+  if (autoScroll) feed.scrollTop = feed.scrollHeight;
+}
+
+// WebSocket con fallback a polling
+let ws;
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => status.textContent = 'conectado';
+  ws.onclose = () => { status.textContent = 'desconectado, reintentando...'; setTimeout(connect, 2000); };
+  ws.onerror = () => status.textContent = 'error';
+  ws.onmessage = (ev) => {
+    const data = JSON.parse(ev.data);
+    addTranscripcion(data.en, data.es);
+  };
+}
+connect();
+
+// Para demo: permite POST manual desde consola con fetch
+window.addTranscripcion = addTranscripcion;
+</script>
+</body>
+</html>
