@@ -4,7 +4,6 @@
 
 - **VM:** 2 vCPU / 947 MB RAM — no alcanza para ASR, solo para FastAPI+WS demo.
 - **Proxy:** Caddy (TLS auto, ~20 MB) vs nginx+certbot (~100 MB + cron).
-- **Licencia:** VB-CABLE donationware — ojo si es máquina de empresa, requiere reinicio.
 
 ```bash
 ./deploy/deploy.sh
