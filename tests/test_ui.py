@@ -35,3 +35,22 @@ def test_post_transcripcion_invalida_422() -> None:
     client = TestClient(app)
     res = client.post("/api/transcripcion", json={"en": "hi"})
     assert res.status_code == 422
+
+
+def test_broadcast_descarta_ws_muerto() -> None:
+    """WS que falla en send_text debe ser removido de conexiones."""
+    from unittest.mock import AsyncMock
+
+    from traductor.ui.app import Transcripcion, broadcast, conexiones
+
+    conexiones.clear()
+    ws_falla = AsyncMock()
+    ws_falla.send_text.side_effect = Exception("desconectado")
+    conexiones.add(ws_falla)
+
+    import asyncio
+
+    asyncio.run(broadcast(Transcripcion(en="hi", es="hola")))
+
+    assert ws_falla not in conexiones
+    conexiones.clear()

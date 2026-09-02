@@ -25,14 +25,14 @@ app = FastAPI(title="Teleprompter Traductor")
 conexiones: set[WebSocket] = set()
 
 
-@app.get("/", response_class=HTMLResponse)  # type: ignore
+@app.get("/", response_class=HTMLResponse)
 async def teleprompter() -> str:
     """Sirve el HTML del teleprompter."""
     html_path = Path(__file__).parent / "templates" / "teleprompter.html"
     return html_path.read_text(encoding="utf-8")
 
 
-@app.websocket("/ws")  # type: ignore
+@app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
     """WebSocket para push en tiempo real."""
     await ws.accept()
@@ -47,7 +47,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
         conexiones.discard(ws)
 
 
-@app.post("/api/transcripcion")  # type: ignore
+@app.post("/api/transcripcion")
 async def post_transcripcion(data: Transcripcion) -> dict[str, str]:
     """Fallback POST — mismo efecto que WS, para cuando WS no está disponible."""
     await broadcast(data)
