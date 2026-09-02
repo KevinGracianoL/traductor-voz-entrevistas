@@ -24,13 +24,11 @@
 
 <div align="center">
 
-### ✨ Demo (próximamente)
+### ✨ Demo
 
-*Teleprompter ES+EN en vivo durante Zoom/Meet — el entrevistador habla inglés, tú lees en español y respondes en tu voz.*
+*Teleprompter ES+EN en vivo durante Zoom/Meet — [https://traductor-demo.kevingraciano.dev](https://traductor-demo.kevingraciano.dev) (feed demo) + `http://localhost:8000` (pipeline real).*
 
-> **Privacidad:** todo corre en tu laptop. El audio nunca sale de la máquina.
-
-**⏸️ Pausa — continuamos en ~6 horas con Paso 5 (teleprompter + deploy).**
+> **Privacidad:** el pipeline real corre en tu laptop. El audio nunca sale de la máquina. La demo en VM es solo feed estático.
 
 </div>
 
@@ -51,8 +49,8 @@ En una entrevista en inglés, un error de traducción no es un bug — es la res
 | **1 — Hardware** | ✅ | `torch.cuda.is_available()`, VRAM libre/total, `RealtimeSTT` `tiny` `int8` (TU117) |
 | **2 — Traducción** | ✅ | `argos-translate` `EN↔ES` offline en CPU, `ARGOS_COMPUTE_TYPE=default` |
 | **3 — Medición** | ✅ | `src/traductor/latencia/` (reloj inyectable, `p50` mediana, `p95=None` si `n<20`) |
-| **4 — Audio virtual** | ✅ | `src/traductor/audio/virtual.py` (ruta por nombre, VB-CABLE, 139/139 mutantes) |
-| **5 — Teleprompter** | ⏳ | UI en vivo + deploy micro VM — *siguiente* |
+| **4 — Audio virtual** | ✅ | `src/traductor/audio/virtual.py` (ruta por nombre, VB-CABLE, 139/139) |
+| **5 — Teleprompter** | ✅ | `src/traductor/ui/` en `localhost:8000` + Caddy demo en `fuerzafiel` |
 
 ---
 
