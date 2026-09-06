@@ -31,5 +31,5 @@ source_paths = ["src/traductor/"]
 pytest_add_cli_args_test_selection = ["tests/"]
 pytest_add_cli_args = ["--no-cov"]
 mutate_only_covered_lines = true
-# patron_virtual default es equivalente por .lower() -> inmatable
-do_not_mutate_patterns = ['patron_virtual: str = "']
+# patron_virtual y 2 raises de audio son textos no verificables
+do_not_mutate_patterns = ['patron_virtual: str = "', 'ruta vacía', 'sin dispositivo virtual']
