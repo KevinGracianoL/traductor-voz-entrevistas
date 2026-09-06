@@ -19,6 +19,7 @@ import json
 import sys
 import time
 import wave
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -33,8 +34,8 @@ def parse_request(line: str) -> tuple[str, str, float, str]:
         raise ValueError(f"línea no es JSON: {e}") from e
     if not isinstance(data, dict):
         raise ValueError("request debe ser un objeto JSON")
-    texto = data.get("texto", "")
-    ref_audio = data.get("ref_audio", "")
+    texto = data.get("texto")
+    ref_audio = data.get("ref_audio")
     if not isinstance(texto, str) or not texto.strip():
         raise ValueError("campo 'texto' requerido y no vacío")
     if not isinstance(ref_audio, str) or not ref_audio:
@@ -49,22 +50,40 @@ def parse_request(line: str) -> tuple[str, str, float, str]:
     return texto, ref_audio, exaggeration, language_id
 
 
-def guardar_wav(ruta: Path, wav: Any, sr: int) -> None:
-    """Guarda wav (tensor torch o array numpy) como PCM16 mono. Solo stdlib+numpy."""
-    import numpy as np
+def _a_flotantes(wav: Any) -> list[float]:
+    """Tensor torch (.tolist) o secuencia -> lista plana de floats.
 
-    arr = np.asarray(wav.cpu().numpy() if hasattr(wav, "cpu") else wav, dtype=np.float32)
-    arr = np.atleast_1d(arr.reshape(-1))
-    pcm = (np.clip(arr, -1.0, 1.0) * 32767).astype(np.int16)
+    Sin numpy a propósito: importar extensiones nativas bajo el trampoline
+    de mutmut rompe el gate (ImportError: cannot load module more than once).
+    """
+    datos = wav.tolist() if hasattr(wav, "tolist") else list(wav)
+    plano: list[float] = []
+    for v in datos:
+        if isinstance(v, (list, tuple)):
+            plano.extend(float(x) for x in v)
+        else:
+            plano.append(float(v))
+    return plano
+
+
+def guardar_wav(ruta: Path, wav: Any, sr: int) -> None:
+    """Guarda wav como PCM16 mono. Solo stdlib (struct+wave)."""
+    import struct
+
+    plano = _a_flotantes(wav)
+    pcm = struct.pack(
+        f"<{len(plano)}h",
+        *(max(-32768, min(32767, int(round(x * 32767)))) for x in plano),
+    )
     with wave.open(str(ruta), "wb") as f:
         f.setnchannels(1)
         f.setsampwidth(2)
         f.setframerate(sr)
-        f.writeframes(pcm.tobytes())
+        f.writeframes(pcm)
 
 
 def run(
-    entrada: TextIO,
+    entrada: Iterable[str],
     salida: TextIO,
     modelo: ChatterboxModel,
     out_dir: Path,
@@ -92,18 +111,19 @@ def run(
             salida.write(
                 json.dumps({"ok": True, "wav": str(destino), "sr": sr, "ms": round(ms, 1)}) + "\n"
             )
+            salida.flush()
         except (ValueError, FileNotFoundError, OSError) as e:
             salida.write(json.dumps({"ok": False, "error": str(e)}) + "\n")
+            salida.flush()
         n += 1
-    salida.flush()
     return n
 
 
 def main(argv: list[str] | None = None) -> int:
     """Punto de entrada: carga el modelo una vez y atiende stdin. Para venv-tts."""
-    parser = argparse.ArgumentParser(description="Worker TTS Chatterbox (stdin/stdout JSON)")
-    parser.add_argument("--out-dir", default="out_tts", help="carpeta para los .wav")
-    parser.add_argument("--device", default="cuda", help="cuda o cpu")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--out-dir", default="out_tts")
+    parser.add_argument("--device", default="cuda")
     args = parser.parse_args(argv)
 
     modelo = cargar_modelo(device=args.device)
