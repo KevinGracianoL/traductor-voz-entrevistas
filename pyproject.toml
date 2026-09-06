@@ -24,12 +24,12 @@ version = "0.1.0"
 dependencies = []
 
 [project.optional-dependencies]
-tts = ["chatterbox-tts==0.1.8"]
+tts = ["chatterbox-tts==0.1.7"]
 
 [tool.mutmut]
 source_paths = ["src/traductor/"]
 pytest_add_cli_args_test_selection = ["tests/"]
 pytest_add_cli_args = ["--no-cov"]
 mutate_only_covered_lines = true
-# patron_virtual y 2 raises de audio son textos no verificables
-do_not_mutate_patterns = ['patron_virtual: str = "', 'ruta vacía', 'sin dispositivo virtual']
+# Solo equivalencia documentada cable<->CABLE por .lower(); mensajes van con asserts exactos
+do_not_mutate_patterns = ['patron_virtual: str = "cable"']

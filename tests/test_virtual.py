@@ -36,9 +36,17 @@ def test_clasificar_vacio() -> None:
 
 def test_seleccionar_ruta_virtual_y_fisico() -> None:
     disps = ["Realtek Mic", "CABLE Output", "Auriculares"]
-    ruta = seleccionar_ruta(disps, patron_virtual="cable")
+    ruta = seleccionar_ruta(disps)
     assert ruta["entrevistador"] == "CABLE Output"
     assert ruta["usuario"] == "Realtek Mic"
+
+
+def test_seleccionar_ruta_virtual_mic_es_virtual() -> None:
+    """Una sola fuente de verdad: si es_virtual dice True, se selecciona."""
+    assert es_virtual("Virtual Mic") is True
+    ruta = seleccionar_ruta(["Virtual Mic"])
+    assert ruta["entrevistador"] == "Virtual Mic"
+    assert ruta["usuario"] is None
 
 
 def test_seleccionar_ruta_sin_virtual() -> None:

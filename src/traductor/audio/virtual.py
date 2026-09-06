@@ -29,16 +29,16 @@ def clasificar_dispositivos(
 
 def seleccionar_ruta(
     dispositivos: list[str],
-    patron_virtual: str = "cable",  # pragma: no mutate
 ) -> dict[str, str | None]:
     """Elige ruta determinista por nombre (ADR-009).
 
-    - Entrevistador (EN->ES): primer dispositivo que matchea patron_virtual (case-insensitive)
+    Única fuente de verdad: es_virtual(). Antes había un param patron_virtual
+    que duplicaba esa lógica y divergía (Virtual Mic era virtual pero no se seleccionaba).
+    - Entrevistador (EN->ES): primer dispositivo virtual según es_virtual()
     - Usuario (ES->EN): primer físico (no virtual)
     Si no hay virtual/físico, devuelve None para esa clave (caller decide fallback).
     """
-    patron = patron_virtual.lower()
-    virtual = next((d for d in dispositivos if patron in d.lower()), None)
+    virtual = next((d for d in dispositivos if es_virtual(d)), None)
     # Físico: primer no-virtual
     fisico = next((d for d in dispositivos if not es_virtual(d)), None)
     return {"entrevistador": virtual, "usuario": fisico}

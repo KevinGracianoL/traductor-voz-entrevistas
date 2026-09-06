@@ -55,19 +55,24 @@ def test_cargar_modelo_device_passthrough() -> None:
 def test_sintetizar_vacio_lanza(tmp_path: Path) -> None:
     ref = tmp_path / "ref.wav"
     ref.write_bytes(b"fake")
-    try:
+    with pytest.raises(ValueError) as excinfo:
         sintetizar("", str(ref))
-    except ValueError as e:
-        assert str(e) == "texto vacío"
-    try:
+    assert str(excinfo.value) == "texto vacío"
+    with pytest.raises(ValueError) as excinfo2:
         sintetizar("   ", str(ref))
-    except ValueError as e:
-        assert str(e) == "texto vacío"
+    assert str(excinfo2.value) == "texto vacío"
 
 
 def test_sintetizar_ref_no_existe_lanza() -> None:
     with pytest.raises(FileNotFoundError) as excinfo:
         sintetizar("hello", "/no/existe.wav")
+    assert "ref_audio no existe" in str(excinfo.value)
+
+
+def test_sintetizar_ref_directorio_lanza(tmp_path: Path) -> None:
+    """Un directorio no es un clip válido aunque exista."""
+    with pytest.raises(FileNotFoundError) as excinfo:
+        sintetizar("hello", tmp_path)
     assert "ref_audio no existe" in str(excinfo.value)
 
 
