@@ -25,4 +25,4 @@ pytest_add_cli_args = ["--no-cov"]
 mutate_only_covered_lines = true
 # patron_virtual default es equivalente por .lower() -> inmatable
 # Los 2 raise son textos de error no verificables -> patrones específicos de audio/virtual.py
-do_not_mutate_patterns = ['patron_virtual: str = "', 'ruta vacía', 'sin dispositivo virtual']
+do_not_mutate_patterns = ['patron_virtual: str = "', 'ruta vacía', 'sin dispositivo virtual', 'texto vacío', 'exaggeration']

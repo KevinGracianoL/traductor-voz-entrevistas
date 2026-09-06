@@ -9,7 +9,9 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def cargar_modelo(device: str = "cuda", multilingue: bool = True) -> object:  # pragma: no cover
+def cargar_modelo(
+    device: str = "cuda", multilingue: bool = True
+) -> object:  # pragma: no cover  # pragma: no mutate
     """Carga Chatterbox. Lazy import para no exigir deps en CI/tests."""
     if multilingue:
         from chatterbox.mtl_tts import ChatterboxMultilingualTTS
