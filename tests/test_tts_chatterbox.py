@@ -3,7 +3,7 @@
 import sys
 import types
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -84,7 +84,7 @@ def test_sintetizar_pasa_language_id(tmp_path: Path) -> None:
         sys.modules.pop("chatterbox.mtl_tts", None)
 
 
-def test_sintetizar_reutiliza_modelo(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_sintetizar_reutiliza_modelo(tmp_path: Path) -> None:
     """Si se pasa modelo, no recarga (1 from_pretrained + 2 generate)."""
     fake_ref = tmp_path / "ref.wav"
     fake_ref.write_bytes(b"fake")
@@ -97,3 +97,51 @@ def test_sintetizar_reutiliza_modelo(tmp_path) -> None:  # type: ignore[no-untyp
     assert mock_model.generate.call_count == 2
     assert wav1 is mock_model.generate.return_value
     assert wav2 is mock_model.generate.return_value
+
+
+def test_cargar_modelo_multilingue_true_y_false() -> None:
+    """Mata mutantes de cargar_modelo: device y multilingue."""
+    from traductor.tts.chatterbox import cargar_modelo
+
+    # Mock para multilingue=True
+    m1 = MagicMock()
+    m1.from_pretrained.return_value = MagicMock(sr=24000)
+    with patch.dict("sys.modules", {"chatterbox.mtl_tts": MagicMock(ChatterboxMultilingualTTS=m1)}):
+        # Necesitamos inyectar también chatterbox principal
+        pkg = MagicMock()
+        sys.modules["chatterbox"] = pkg  # type: ignore[assignment]
+        sys.modules["chatterbox.mtl_tts"] = MagicMock(ChatterboxMultilingualTTS=m1)
+        try:
+            cargar_modelo(device="cpu", multilingue=True)
+            m1.from_pretrained.assert_called_once_with(device="cpu")
+        finally:
+            sys.modules.pop("chatterbox", None)
+            sys.modules.pop("chatterbox.mtl_tts", None)
+
+    # Mock para multilingue=False
+    m2 = MagicMock()
+    m2.from_pretrained.return_value = MagicMock(sr=24000)
+    with patch.dict("sys.modules", {"chatterbox.tts": MagicMock(ChatterboxTTS=m2)}):
+        sys.modules["chatterbox"] = MagicMock()  # type: ignore[assignment]
+        sys.modules["chatterbox.tts"] = MagicMock(ChatterboxTTS=m2)
+        try:
+            cargar_modelo(device="cuda", multilingue=False)
+            m2.from_pretrained.assert_called_once_with(device="cuda")
+        finally:
+            sys.modules.pop("chatterbox", None)
+            sys.modules.pop("chatterbox.tts", None)
+
+
+def test_sintetizar_device_y_language_passthrough(tmp_path: Path) -> None:
+    """Mata mutantes de device/language_id: deben llegar al loader/generator."""
+    ref = tmp_path / "ref.wav"
+    ref.write_bytes(b"fake")
+    mock_cls = _inject_chatterbox()
+    try:
+        sintetizar("hello", str(ref), device="cpu", language_id="fr")
+        mock_cls.from_pretrained.assert_called_once_with(device="cpu")
+        kwargs = mock_cls.from_pretrained.return_value.generate.call_args.kwargs
+        assert kwargs["language_id"] == "fr"
+    finally:
+        sys.modules.pop("chatterbox", None)
+        sys.modules.pop("chatterbox.mtl_tts", None)
