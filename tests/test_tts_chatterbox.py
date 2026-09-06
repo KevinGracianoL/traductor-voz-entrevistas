@@ -109,7 +109,7 @@ def test_cargar_modelo_multilingue_true_y_false() -> None:
     with patch.dict("sys.modules", {"chatterbox.mtl_tts": MagicMock(ChatterboxMultilingualTTS=m1)}):
         # Necesitamos inyectar también chatterbox principal
         pkg = MagicMock()
-        sys.modules["chatterbox"] = pkg  # type: ignore[assignment]
+        sys.modules["chatterbox"] = pkg
         sys.modules["chatterbox.mtl_tts"] = MagicMock(ChatterboxMultilingualTTS=m1)
         try:
             cargar_modelo(device="cpu", multilingue=True)
@@ -122,7 +122,7 @@ def test_cargar_modelo_multilingue_true_y_false() -> None:
     m2 = MagicMock()
     m2.from_pretrained.return_value = MagicMock(sr=24000)
     with patch.dict("sys.modules", {"chatterbox.tts": MagicMock(ChatterboxTTS=m2)}):
-        sys.modules["chatterbox"] = MagicMock()  # type: ignore[assignment]
+        sys.modules["chatterbox"] = MagicMock()
         sys.modules["chatterbox.tts"] = MagicMock(ChatterboxTTS=m2)
         try:
             cargar_modelo(device="cuda", multilingue=False)
