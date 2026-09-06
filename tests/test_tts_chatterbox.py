@@ -66,14 +66,15 @@ def test_sintetizar_vacio_lanza(tmp_path: Path) -> None:
 def test_sintetizar_ref_no_existe_lanza() -> None:
     with pytest.raises(FileNotFoundError) as excinfo:
         sintetizar("hello", "/no/existe.wav")
-    assert "ref_audio no existe" in str(excinfo.value)
+    # Path normaliza distinto en Windows/Ubuntu: comparar contra el mismo Path
+    assert str(excinfo.value) == f"ref_audio no existe: {Path('/no/existe.wav')}"
 
 
 def test_sintetizar_ref_directorio_lanza(tmp_path: Path) -> None:
     """Un directorio no es un clip válido aunque exista."""
     with pytest.raises(FileNotFoundError) as excinfo:
         sintetizar("hello", tmp_path)
-    assert "ref_audio no existe" in str(excinfo.value)
+    assert str(excinfo.value) == f"ref_audio no existe: {tmp_path}"
 
 
 def test_sintetizar_exaggeration_frontera(tmp_path: Path) -> None:

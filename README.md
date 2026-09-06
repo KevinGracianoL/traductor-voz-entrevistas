@@ -109,6 +109,7 @@ ruff check .; ruff format --check .; mypy .; pytest
 ## ▶️ Uso
 
 ```powershell
+$env:PYTHONPATH = "src"
 python scripts/verificar_hardware.py  # → CUDA: True | GTX 1650 Ti | VRAM 3.2/4 GB | mic → texto
 python scripts/demo_traduccion.py     # → "Tell me about a hard bug..." ↔ "Háblame de un bug..."
 ```
@@ -142,7 +143,7 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 ├── scripts/
 │   ├── verificar_hardware.py   # wrapper fino hardware
 │   └── demo_traduccion.py      # wrapper fino traducción
-├── tests/                      # 39 tests, 100% cov, 139/139 mutantes
+├── tests/                      # 64 tests, 100% cov, mutantes en CI
 ├── .github/workflows/ci.yml
 ├── pyproject.toml              # ruff + mypy strict + pytest --cov-fail-under=90
 └── requirements.txt

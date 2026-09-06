@@ -74,13 +74,15 @@ def test_validar_ruta_ok() -> None:
 
 
 def test_validar_ruta_sin_virtual_raise() -> None:
-    with pytest.raises(ValueError, match="sin dispositivo virtual"):
+    with pytest.raises(ValueError) as excinfo:
         validar_ruta({"entrevistador": None, "usuario": "Mic"})
+    assert str(excinfo.value) == "sin dispositivo virtual: instala VB-CABLE para entrevistador"
 
 
 def test_validar_ruta_vacia_raise() -> None:
-    with pytest.raises(ValueError, match="ruta vacía"):
+    with pytest.raises(ValueError) as excinfo:
         validar_ruta({"entrevistador": None, "usuario": None})
+    assert str(excinfo.value) == "ruta vacía: no hay dispositivos físicos ni virtuales"
 
 
 def test_validar_ruta_virtual_sin_mic_no_lanza() -> None:

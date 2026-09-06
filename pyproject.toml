@@ -31,5 +31,3 @@ source_paths = ["src/traductor/"]
 pytest_add_cli_args_test_selection = ["tests/"]
 pytest_add_cli_args = ["--no-cov"]
 mutate_only_covered_lines = true
-# Solo equivalencia documentada cable<->CABLE por .lower(); mensajes van con asserts exactos
-do_not_mutate_patterns = ['patron_virtual: str = "cable"']

@@ -25,7 +25,7 @@ class ChatterboxModel(Protocol):
     ) -> object: ...
 
 
-def cargar_modelo(device: str = "cuda") -> ChatterboxModel:  # pragma: no cover
+def cargar_modelo(device: str = "cuda") -> ChatterboxModel:
     """Carga Chatterbox Multilingual. Lazy import para no exigir deps en CI/tests."""
     from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
