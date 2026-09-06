@@ -1,7 +1,12 @@
-chatterbox-tts==0.1.7
-# Instalación aislada (incompatible con torch==2.13.0+cu132 / numpy==2.4.4 del repo):
-#   python -m venv venv-tts && venv-tts/Scripts/activate
-#   pip install -r requirements-tts.txt && pip check
-# 0.1.7 exige torch==2.6.0, torchaudio==2.6.0 y numpy<2 en Python 3.12.
+# TTS opcional (Chatterbox Multilingual, MIT) — entorno AISLADO.
+# chatterbox-tts==0.1.7 exige torch==2.6.0, torchaudio==2.6.0 y numpy<2,
+# incompatibles con requirements.txt (torch 2.13+cu132, numpy 2.4.4).
+# No instalar en el venv principal. Receta PowerShell:
+#   python -m venv venv-tts
+#   .\venv-tts\Scripts\Activate.ps1
+#   python -m pip install -e ".[tts]"
+#   python -m pip check
+#   python -c "import chatterbox.mtl_tts; print('import ok')"
 # Hipótesis sin medir: ~2-3 GB VRAM y 400-700 ms primer chunk en GTX 1650 Ti.
-# Uso: from traductor.tts.chatterbox import sintetizar; sintetizar("hola", "ref.wav")
+# Medición real pendiente (inferencia + VRAM pico + latencia cold/warm).
+-e .[tts]

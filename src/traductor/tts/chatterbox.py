@@ -7,7 +7,7 @@ Pendiente: instalación limpia + inferencia real + VRAM pico + latencia cold/war
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Protocol
 
 
 class ChatterboxModel(Protocol):
@@ -29,7 +29,8 @@ def cargar_modelo(device: str = "cuda") -> ChatterboxModel:
     """Carga Chatterbox Multilingual. Lazy import para no exigir deps en CI/tests."""
     from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
-    return cast(ChatterboxModel, ChatterboxMultilingualTTS.from_pretrained(device=device))
+    modelo: ChatterboxModel = ChatterboxMultilingualTTS.from_pretrained(device=device)
+    return modelo
 
 
 def sintetizar(
