@@ -9,18 +9,11 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def cargar_modelo(  # pragma: no cover
-    device: str = "cuda", multilingue: bool = True
-) -> object:  # pragma: no mutate
-    """Carga Chatterbox. Lazy import para no exigir deps en CI/tests."""
-    if multilingue:
-        from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+def cargar_modelo(device: str = "cuda") -> object:  # pragma: no cover
+    """Carga Chatterbox Multilingual. Lazy import para no exigir deps en CI/tests."""
+    from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
-        return ChatterboxMultilingualTTS.from_pretrained(device=device)
-    else:
-        from chatterbox.tts import ChatterboxTTS
-
-        return ChatterboxTTS.from_pretrained(device=device)
+    return ChatterboxMultilingualTTS.from_pretrained(device=device)
 
 
 def sintetizar(
@@ -37,14 +30,14 @@ def sintetizar(
     carga uno nuevo vía `cargar_modelo`.
     """
     if not texto or not str(texto).strip():
-        raise ValueError("texto vacío")  # pragma: no mutate
+        raise ValueError("texto vacío")
     ref = Path(ref_audio)
     if not ref.exists():
-        raise FileNotFoundError(f"ref_audio no existe: {ref}")  # pragma: no mutate
-    if not 0.0 <= exaggeration <= 1.0:  # pragma: no mutate
-        raise ValueError(f"exaggeration fuera de rango [0,1]: {exaggeration}")  # pragma: no mutate
+        raise FileNotFoundError(f"ref_audio no existe: {ref}")
+    if not 0.0 <= exaggeration <= 1.0:
+        raise ValueError(f"exaggeration fuera de rango [0,1]: {exaggeration}")
 
-    m = modelo if modelo is not None else cargar_modelo(device=device, multilingue=True)
+    m = modelo if modelo is not None else cargar_modelo(device=device)
     wav = m.generate(  # type: ignore[attr-defined]
         text=texto,
         audio_prompt_path=str(ref),
