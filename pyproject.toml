@@ -18,10 +18,18 @@ ignore_missing_imports = true
 pythonpath = ["src"]
 addopts = "-q --cov=traductor.latencia --cov=traductor.audio.virtual --cov=traductor.traduccion --cov=traductor.ui --cov=traductor.tts --cov-report=term-missing --cov-fail-under=90"
 
+[project]
+name = "traductor-voz-entrevistas"
+version = "0.1.0"
+dependencies = []
+
+[project.optional-dependencies]
+tts = ["chatterbox-tts==0.1.8"]
+
 [tool.mutmut]
 source_paths = ["src/traductor/"]
 pytest_add_cli_args_test_selection = ["tests/"]
 pytest_add_cli_args = ["--no-cov"]
 mutate_only_covered_lines = true
-# patron_virtual y textos no verificables + I/O no testeable
-do_not_mutate_patterns = ['patron_virtual: str = "', 'ruta vacía', 'sin dispositivo virtual', 'texto vacío', 'exaggeration', 'def cargar_modelo']
+# patron_virtual default es equivalente por .lower() -> inmatable
+do_not_mutate_patterns = ['patron_virtual: str = "']

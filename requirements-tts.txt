@@ -1,0 +1,4 @@
+chatterbox-tts==0.1.8
+# Instalación: pip install -r requirements-tts.txt
+# Requiere ~2-3GB VRAM, probado en GTX 1650 Ti 4GB con Whisper int8
+# Uso: from traductor.tts.chatterbox import sintetizar; sintetizar("hola", "ref.wav")
