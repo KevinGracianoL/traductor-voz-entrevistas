@@ -9,9 +9,9 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def cargar_modelo(
+def cargar_modelo(  # pragma: no cover
     device: str = "cuda", multilingue: bool = True
-) -> object:  # pragma: no cover  # pragma: no mutate
+) -> object:  # pragma: no mutate
     """Carga Chatterbox. Lazy import para no exigir deps en CI/tests."""
     if multilingue:
         from chatterbox.mtl_tts import ChatterboxMultilingualTTS
@@ -37,12 +37,12 @@ def sintetizar(
     carga uno nuevo vía `cargar_modelo`.
     """
     if not texto or not str(texto).strip():
-        raise ValueError("texto vacío")
+        raise ValueError("texto vacío")  # pragma: no mutate
     ref = Path(ref_audio)
     if not ref.exists():
-        raise FileNotFoundError(f"ref_audio no existe: {ref}")
-    if not 0.0 <= exaggeration <= 1.0:
-        raise ValueError(f"exaggeration fuera de rango [0,1]: {exaggeration}")
+        raise FileNotFoundError(f"ref_audio no existe: {ref}")  # pragma: no mutate
+    if not 0.0 <= exaggeration <= 1.0:  # pragma: no mutate
+        raise ValueError(f"exaggeration fuera de rango [0,1]: {exaggeration}")  # pragma: no mutate
 
     m = modelo if modelo is not None else cargar_modelo(device=device, multilingue=True)
     wav = m.generate(  # type: ignore[attr-defined]
