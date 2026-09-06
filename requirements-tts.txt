@@ -7,6 +7,9 @@
 #   python -m pip install -e ".[tts]"
 #   python -m pip check
 #   python -c "import chatterbox.mtl_tts; print('import ok')"
+# Smoke (una frase, valida WAV + latencia, guarda out_smoke/):
+#   $env:PYTHONPATH = "src"
+#   echo '{"texto": "hola mundo", "ref_audio": "ref.wav"}' | python scripts/tts_worker.py --out-dir out_smoke
 # Hipótesis sin medir: ~2-3 GB VRAM y 400-700 ms primer chunk en GTX 1650 Ti.
 # Medición real pendiente (inferencia + VRAM pico + latencia cold/warm).
 -e .[tts]

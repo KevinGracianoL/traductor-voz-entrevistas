@@ -36,15 +36,15 @@ def cargar_modelo(device: str = "cuda") -> ChatterboxModel:
 def sintetizar(
     texto: str,
     ref_audio: str | Path,
-    device: str = "cuda",
+    modelo: ChatterboxModel,
     exaggeration: float = 0.5,
     language_id: str = "en",
-    modelo: ChatterboxModel | None = None,
 ) -> tuple[object, int]:
     """Texto -> (wav tensor, sample_rate). Necesita clip de voz de ~10s.
 
-    Si se pasa `modelo`, se reutiliza (evita recargar por frase). Si no, se
-    carga uno nuevo vía `cargar_modelo`.
+    `modelo` es obligatorio y lo posee el caller (cargado una vez vía
+    `cargar_modelo` o por el worker): la API hace imposible recargar
+    pesos por frase, no solo lo desaconseja.
     """
     if not texto or not str(texto).strip():
         raise ValueError("texto vacío")
@@ -54,11 +54,10 @@ def sintetizar(
     if not 0.0 <= exaggeration <= 1.0:
         raise ValueError(f"exaggeration fuera de rango [0,1]: {exaggeration}")
 
-    m = modelo if modelo is not None else cargar_modelo(device=device)
-    wav = m.generate(
+    wav = modelo.generate(
         text=texto,
         audio_prompt_path=str(ref),
         exaggeration=exaggeration,
         language_id=language_id,
     )
-    return wav, m.sr
+    return wav, modelo.sr
