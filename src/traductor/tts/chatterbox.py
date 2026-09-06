@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def cargar_modelo(device: str = "cuda", multilingue: bool = True):  # pragma: no cover
+def cargar_modelo(device: str = "cuda", multilingue: bool = True) -> object:  # pragma: no cover
     """Carga Chatterbox. Lazy import para no exigir deps en CI/tests."""
     if multilingue:
         from chatterbox.mtl_tts import ChatterboxMultilingualTTS
@@ -27,8 +27,13 @@ def sintetizar(
     device: str = "cuda",
     exaggeration: float = 0.5,
     language_id: str = "en",
+    modelo: object | None = None,
 ) -> tuple[object, int]:
-    """Texto -> (wav tensor, sample_rate). Necesita clip de voz de ~10s."""
+    """Texto -> (wav tensor, sample_rate). Necesita clip de voz de ~10s.
+
+    Si se pasa `modelo`, se reutiliza (evita recargar por frase). Si no, se
+    carga uno nuevo vía `cargar_modelo`.
+    """
     if not texto or not str(texto).strip():
         raise ValueError("texto vacío")
     ref = Path(ref_audio)
@@ -37,13 +42,12 @@ def sintetizar(
     if not 0.0 <= exaggeration <= 1.0:
         raise ValueError(f"exaggeration fuera de rango [0,1]: {exaggeration}")
 
-    from chatterbox.mtl_tts import ChatterboxMultilingualTTS
-
-    modelo = ChatterboxMultilingualTTS.from_pretrained(device=device)
-    wav = modelo.generate(
+    m = modelo if modelo is not None else cargar_modelo(device=device, multilingue=True)
+    wav = m.generate(  # type: ignore[attr-defined]
         text=texto,
         audio_prompt_path=str(ref),
         exaggeration=exaggeration,
         language_id=language_id,
     )
-    return wav, modelo.sr
+    sr = m.sr  # type: ignore[attr-defined]
+    return wav, sr

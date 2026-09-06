@@ -17,8 +17,9 @@ def _inject_chatterbox() -> MagicMock:
     mock_model = MagicMock()
     mock_model.sr = 24000
     mock_model.generate.return_value = MagicMock()
-    mock_cls = MagicMock(return_value=mock_model)
-    mtl.ChatterboxMultilingualTTS = mock_cls
+    mock_cls = MagicMock()
+    mock_cls.from_pretrained = MagicMock(return_value=mock_model)
+    mtl.ChatterboxMultilingualTTS = mock_cls  # type: ignore[attr-defined]
     pkg.mtl_tts = mtl  # type: ignore[attr-defined]
     sys.modules["chatterbox"] = pkg
     sys.modules["chatterbox.mtl_tts"] = mtl
@@ -54,9 +55,8 @@ def test_sintetizar_ok_llama_generate(tmp_path: Path) -> None:
     mock_cls = _inject_chatterbox()
     try:
         wav, sr = sintetizar("hello", str(ref), exaggeration=0.5, language_id="en")
-        mock_cls.assert_called_once_with(device="cuda")
-        # Verifica que generate recibió texto, ref y params correctos
-        mock_model = mock_cls.return_value
+        mock_cls.from_pretrained.assert_called_once_with(device="cuda")
+        mock_model = mock_cls.from_pretrained.return_value
         mock_model.generate.assert_called_once()
         kwargs = mock_model.generate.call_args.kwargs
         assert kwargs["text"] == "hello"
@@ -64,6 +64,7 @@ def test_sintetizar_ok_llama_generate(tmp_path: Path) -> None:
         assert kwargs["exaggeration"] == 0.5
         assert kwargs["language_id"] == "en"
         assert sr == 24000
+        assert wav is mock_model.generate.return_value
     finally:
         sys.modules.pop("chatterbox", None)
         sys.modules.pop("chatterbox.mtl_tts", None)
@@ -75,8 +76,24 @@ def test_sintetizar_pasa_language_id(tmp_path: Path) -> None:
     mock_cls = _inject_chatterbox()
     try:
         sintetizar("hola", str(ref), language_id="es")
-        mock_cls.return_value.generate.assert_called_once()
-        assert mock_cls.return_value.generate.call_args.kwargs["language_id"] == "es"
+        mock_model = mock_cls.from_pretrained.return_value
+        mock_model.generate.assert_called_once()
+        assert mock_model.generate.call_args.kwargs["language_id"] == "es"
     finally:
         sys.modules.pop("chatterbox", None)
         sys.modules.pop("chatterbox.mtl_tts", None)
+
+
+def test_sintetizar_reutiliza_modelo(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Si se pasa modelo, no recarga (1 from_pretrained + 2 generate)."""
+    fake_ref = tmp_path / "ref.wav"
+    fake_ref.write_bytes(b"fake")
+    mock_model = MagicMock()
+    mock_model.sr = 24000
+    mock_model.generate.return_value = MagicMock()
+
+    wav1, _ = sintetizar("hola", fake_ref, modelo=mock_model)
+    wav2, _ = sintetizar("hello", fake_ref, modelo=mock_model)
+    assert mock_model.generate.call_count == 2
+    assert wav1 is mock_model.generate.return_value
+    assert wav2 is mock_model.generate.return_value
