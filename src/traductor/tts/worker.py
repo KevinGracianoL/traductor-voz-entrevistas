@@ -59,7 +59,7 @@ def _a_flotantes(wav: Any) -> list[float]:
     datos = wav.tolist() if hasattr(wav, "tolist") else list(wav)
     plano: list[float] = []
     for v in datos:
-        if isinstance(v, (list, tuple)):
+        if isinstance(v, list | tuple):
             plano.extend(float(x) for x in v)
         else:
             plano.append(float(v))
