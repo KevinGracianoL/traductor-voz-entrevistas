@@ -75,13 +75,15 @@ import torch
 from traductor.tts.chatterbox import cargar_modelo, sintetizar
 t0=time.perf_counter(); m=cargar_modelo(device='cuda'); t1=time.perf_counter()
 print('carga ms:', round((t1-t0)*1000), '| VRAM MB:', round(torch.cuda.memory_allocated()/1024**2))
-def synced_ms(t0):
-    torch.cuda.synchronize()  # sin esto se mide el lanzamiento, no el cómputo
+def intervalo(t0):
+    torch.cuda.synchronize()  # drena trabajo previo y pendiente: se mide cómputo, no lanzamiento
     return (time.perf_counter()-t0)*1000.0
+
+torch.cuda.synchronize()  # también ANTES de arrancar el cronómetro
 
 for i,txt in enumerate(['hola mundo, esto es una prueba','cuéntame sobre un bug difícil']):
     a=time.perf_counter(); wav,sr=sintetizar(txt,'ref.wav',m)
-    print(f'frase{i+1} ms:', round(synced_ms(a)), 'sr:', sr)
+    print(f'frase{i+1} ms:', round(intervalo(a)), 'sr:', sr)
 print('VRAM pico MB:', round(torch.cuda.max_memory_allocated()/1024**2))
 from traductor.tts.worker import guardar_wav
 from pathlib import Path
