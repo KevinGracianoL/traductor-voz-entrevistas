@@ -11,7 +11,7 @@
 ![Ruff](https://img.shields.io/badge/Ruff-checked-000000?style=flat-square)
 ![mypy strict](https://img.shields.io/badge/mypy-strict-2A6DB5?style=flat-square)
 ![coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen?style=flat-square)
-![mutants 139/139](https://img.shields.io/badge/mutants-139%2F139-brightgreen?style=flat-square)
+![mutants 186/186](https://img.shields.io/badge/mutants-186%2F186-brightgreen?style=flat-square)
 ![License MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)
 
 **Portafolio → [KevinGracianoL](https://github.com/KevinGracianoL) · Proyecto guía [entrenamiento-dev](https://github.com/KevinGracianoL/entrenamiento-dev) · Hecho para entrevistas reales, no demos**
@@ -49,7 +49,7 @@ En una entrevista en inglés, un error de traducción no es un bug — es la res
 | **1 — Hardware** | ✅ | `torch.cuda.is_available()`, VRAM libre/total, `RealtimeSTT` `tiny` `int8` (TU117) |
 | **2 — Traducción** | ✅ | `argos-translate` `EN↔ES` offline en CPU, `ARGOS_COMPUTE_TYPE=default` |
 | **3 — Medición** | ✅ | `src/traductor/latencia/` (reloj inyectable, `p50` mediana, `p95=None` si `n<20`) |
-| **4 — Audio virtual** | ✅ | `src/traductor/audio/virtual.py` (ruta por nombre, VB-CABLE, 139/139) |
+| **4 — Audio virtual** | ✅ | `src/traductor/audio/virtual.py` (ruta por nombre, VB-CABLE, 186/186) |
 | **5 — Teleprompter** | ✅ | `src/traductor/ui/` en `localhost:8000` + Caddy demo en `fuerzafiel` |
 
 ---
@@ -78,7 +78,7 @@ flowchart LR
 | **ASR** | `RealtimeSTT` + `faster-whisper` `int8` | TU117 sin Tensor Cores → FP16 emulado, INT8 en cores enteros |
 | **Traducción** | `argos-translate` + `ctranslate2` | Offline, CPU, gratis |
 | **Medición** | `time.perf_counter` inyectable | Testeable sin hardware |
-| **Calidad** | `ruff` `mypy --strict` `pytest` `mutmut` | 100% cov, 139/139 mutantes |
+| **Calidad** | `ruff` `mypy --strict` `pytest` `mutmut` | 100% cov, 186/186 mutantes |
 
 ---
 
@@ -159,7 +159,7 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 | ¿Tipos encajan? | **mypy --strict** | `ignore_missing_imports` para RealtimeSTT |
 | ¿Hace lo que digo? | **pytest** | `--cov-fail-under=90` en `pyproject.toml` |
 | ¿Qué no probé? | **coverage** | `100%` |
-| ¿Detectaría un bug? | **mutmut** | `139/139` con `pytest_add_cli_args = ["--no-cov"]` |
+| ¿Detectaría un bug? | **mutmut** | `186/186` con `pytest_add_cli_args = ["--no-cov"]` |
 
 > `mutmut` necesita `fork` → WSL. En CI (Ubuntu) el gate falla si `survived > 0`. Verificado rompiendo `<=`→`<` y `*1000`→`/1000` a mano.
 
@@ -178,7 +178,7 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 | 007 | Teleprompter primero | Semanas vs meses, honestidad en entrevista |
 | 008 | Fallback automático | Una entrevista no es un log |
 | 009 | Dirección por fuente | Determinista, 0 ms, sin detector que falle en code-switching |
-| 010 | Chatterbox rechazado como TTS | Medido 11.6 s warm / 3.6 GB en GTX 1650 Ti: 38.7× el presupuesto y sin co-residencia con Whisper |
+| 010 | Chatterbox rechazado como TTS | Ver [ADR-010](docs/ADR-010-chatterbox-rechazado.md): 11.6 s warm / 3.6 GB medidos, sin co-residencia con Whisper |
 
 ---
 
@@ -186,7 +186,7 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 
 - [x] **Paso 1 — Hardware** — CUDA + VRAM + mic → texto (`src/traductor/hardware/`, `audio/captura.py`)
 - [x] **Paso 2 — Traducción** — `argos` offline EN↔ES (`src/traductor/traduccion/`)
-- [x] **Paso 3 — Medición** — presupuesto + medidor honesto (`p95`, `exc.elapsed_ms`, `139/139` mutantes)
+- [x] **Paso 3 — Medición** — presupuesto + medidor honesto (`p95`, `exc.elapsed_ms`, `186/186` mutantes)
 - [x] **Paso 4 — Audio virtual** — ruta por nombre, VB-CABLE (`src/traductor/audio/virtual.py`)
 - [ ] **Paso 5 — Teleprompter** — UI en vivo + deploy micro VM (nginx + TLS) — *siguiente*
 - [ ] Fase 2 — TTS (Chatterbox rechazado, ver ADR-010)
