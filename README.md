@@ -63,7 +63,7 @@ flowchart LR
     VAD --> ASR[Whisper int8<br/>400-600 ms]
     ASR --> TR[argos CPU<br/>~150 ms]
     TR --> TP[📺 Teleprompter<br/>ES+EN]
-    TR --> TTS[TTS 300 ms]
+    TR --> TTS[TTS ?]
     TTS --> SPK[🔊 Altavoz virtual]
 ```
 
@@ -178,6 +178,7 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 | 007 | Teleprompter primero | Semanas vs meses, honestidad en entrevista |
 | 008 | Fallback automático | Una entrevista no es un log |
 | 009 | Dirección por fuente | Determinista, 0 ms, sin detector que falle en code-switching |
+| 010 | Chatterbox rechazado como TTS | Medido 11.6 s warm / 3.6 GB en GTX 1650 Ti: 38.7× el presupuesto y sin co-residencia con Whisper |
 
 ---
 
@@ -188,7 +189,7 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 - [x] **Paso 3 — Medición** — presupuesto + medidor honesto (`p95`, `exc.elapsed_ms`, `139/139` mutantes)
 - [x] **Paso 4 — Audio virtual** — ruta por nombre, VB-CABLE (`src/traductor/audio/virtual.py`)
 - [ ] **Paso 5 — Teleprompter** — UI en vivo + deploy micro VM (nginx + TLS) — *siguiente*
-- [ ] Fase 2 — TTS opcional
+- [ ] Fase 2 — TTS (Chatterbox rechazado, ver ADR-010)
 - [ ] Fase 3 — Conversión de voz (timbre de Kevin)
 
 ---
