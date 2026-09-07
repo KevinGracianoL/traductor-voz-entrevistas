@@ -53,6 +53,7 @@ chatterbox-tts 0.1.7 has requirement torchaudio==2.6.0; python_version < "3.14",
 
 ```python
 import math, struct, wave
+
 sr, dur = 24000, 10.0
 frames = bytearray()
 for i in range(int(sr * dur)):
@@ -60,7 +61,9 @@ for i in range(int(sr * dur)):
     v = 0.5 * math.sin(2 * math.pi * 220 * t) + 0.25 * math.sin(2 * math.pi * 440 * t)
     frames += struct.pack("<h", max(-32768, min(32767, int(v * 32767))))
 with wave.open("ref.wav", "wb") as f:
-    f.setnchannels(1); f.setsampwidth(2); f.setframerate(sr)
+    f.setnchannels(1)
+    f.setsampwidth(2)
+    f.setframerate(sr)
     f.writeframes(bytes(frames))
 ```
 

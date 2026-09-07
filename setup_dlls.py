@@ -34,7 +34,17 @@ print("DLLs copiadas a", dest, "y", ct2_dir)
 
 # site-packages real (site.getsitepackages miente en virtualenv: devuelve venv\)
 site_packages = os.path.dirname(nvidia.__path__[0])
+keeper = os.path.join(site_packages, "zz_nvidia_dlls.py")
+with open(keeper, "w", encoding="utf-8") as fh:
+    fh.write(
+        "# Registra dirs CUDA. Los handles VIVEN en _HANDLES: si se descartan,\n"
+        "# CPython puede cerrar las rutas y los imports posteriores fallan.\n"
+        "# Generado por setup_dlls.py, no editar a mano.\n"
+        "import os\n"
+        "_DIRS = [\n" + "".join(f"    r'{b}',\n" for b in bins) + "]\n"
+        "_HANDLES = [os.add_dll_directory(p) for p in _DIRS]\n"
+    )
 pth = os.path.join(site_packages, "zz_nvidia_dlls.pth")
 with open(pth, "w", encoding="utf-8") as fh:
-    fh.write("import os; " + "; ".join(f"os.add_dll_directory(r'{b}')" for b in bins) + "\n")
-print(".pth escrito en", pth)
+    fh.write("import zz_nvidia_dlls\n")
+print("keeper+pth en", keeper, "y", pth)

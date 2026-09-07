@@ -1,5 +1,7 @@
 """Tests del adapter Pocket TTS — sin modelo ni CPU real."""
 
+from __future__ import annotations
+
 import sys
 import types
 from unittest.mock import MagicMock
@@ -50,6 +52,45 @@ def test_sintetizar_devuelve_pcm_sr_ttfa() -> None:
     import struct
 
     assert struct.unpack("<2h", pcm) == (0, 16384)
+    # Args exactos: matar mutantes que quitan modelo/state/texto
+    tts._model.generate_audio_stream.assert_called_once_with({"voz": 1}, "hola")
+
+
+def test_sintetizar_stream_entrega_conforme_llega() -> None:
+    """Regresión P0: el chunk 2 no se entrega hasta que el consumidor recibió el 1."""
+
+    class StreamExigente:
+        def __init__(self) -> None:
+            self.recibido = False
+            self.n = 0
+
+        def __iter__(self) -> StreamExigente:
+            return self
+
+        def __next__(self) -> FakeChunk:
+            self.n += 1
+            if self.n == 1:
+                return FakeChunk([0.0])
+            if self.n == 2:
+                assert self.recibido, "chunk1 no llegó al consumidor antes del chunk2"
+                return FakeChunk([0.5])
+            raise StopIteration
+
+    model = MagicMock()
+    model.generate_audio_stream.return_value = StreamExigente()
+    tts = PocketTTS(model, {"voz": 1}, 24000)
+    it = tts.sintetizar_stream("hola")
+    c1 = next(it)
+    stream = model.generate_audio_stream.return_value
+    assert isinstance(stream, StreamExigente)
+    stream.recibido = True
+    c2 = next(it)
+    import struct
+
+    assert struct.unpack("<h", c1) == (0,)
+    assert struct.unpack("<h", c2) == (16384,)
+    with pytest.raises(StopIteration):
+        next(it)
 
 
 def sintetizar_con_reloj(tts: PocketTTS, texto: str) -> tuple[bytes, int, float]:
@@ -58,10 +99,19 @@ def sintetizar_con_reloj(tts: PocketTTS, texto: str) -> tuple[bytes, int, float]
     return tts.sintetizar(texto, clock=lambda: next(tiempos))
 
 
+def test_sintetizar_stream_vacio_lanza() -> None:
+    with pytest.raises(ValueError) as excinfo:
+        list(_tts().sintetizar_stream("   "))
+    assert str(excinfo.value) == "texto vacío"
+
+
 def test_sintetizar_vacio_lanza() -> None:
     with pytest.raises(ValueError) as excinfo:
         _tts().sintetizar("")
     assert str(excinfo.value) == "texto vacío"
+    with pytest.raises(ValueError) as excinfo2:
+        _tts().sintetizar("   ")
+    assert str(excinfo2.value) == "texto vacío"
 
 
 def test_sintetizar_sin_chunks_lanza() -> None:
@@ -70,6 +120,17 @@ def test_sintetizar_sin_chunks_lanza() -> None:
     with pytest.raises(ValueError) as excinfo:
         PocketTTS(model, {}, 24000).sintetizar("hola")
     assert str(excinfo.value) == "modelo no generó ningún chunk"
+
+
+def test_sintetizar_batch_concatena_chunks() -> None:
+    """total += pcm (no =): con 2 chunks el batch trae ambos en orden."""
+    import struct
+
+    model = MagicMock()
+    model.generate_audio_stream.return_value = iter([FakeChunk([0.0]), FakeChunk([0.5])])
+    tts = PocketTTS(model, {"voz": 1}, 24000)
+    pcm, _, _ = tts.sintetizar("hola")
+    assert struct.unpack("<2h", pcm) == (0, 16384)
 
 
 def test_sintetizar_reutiliza_modelo() -> None:
@@ -90,6 +151,8 @@ def test_cargar_defaults_english_alba() -> None:
         mock_cls.load_model.assert_called_once_with(language="english")
         mock_model._cached_get_state_for_audio_prompt.assert_called_once_with("alba")
         assert tts._sr == 24000
+        assert tts._model is mock_model
+        assert tts._voice_state == {"v": 1}
     finally:
         sys.modules.pop("pocket_tts", None)
         sys.modules.pop("pocket_tts.default_parameters", None)
@@ -115,3 +178,17 @@ def test_a_pcm16_recorta_y_aplana() -> None:
 
     pcm = _a_pcm16([FakeChunk([[2.0, -2.0]]), FakeChunk(0.5)])
     assert struct.unpack("<3h", pcm) == (32767, -32768, 16384)
+
+
+def test_a_pcm16_acepta_lista_sin_tolist() -> None:
+    """Rama iterable sin .tolist(): listas crudas también valen."""
+    import struct
+
+    assert struct.unpack("<2h", _a_pcm16([[0.0, 0.5]])) == (0, 16384)
+
+
+def test_a_pcm16_escala_exacta() -> None:
+    """0.35*32767=11468 (con *32768 daría 11469)."""
+    import struct
+
+    assert struct.unpack("<h", _a_pcm16([FakeChunk([0.35])])) == (11468,)

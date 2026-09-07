@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import struct
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from typing import Any
 
 
@@ -32,25 +32,37 @@ class PocketTTS:
         state = model._cached_get_state_for_audio_prompt(nombre_voz)
         return cls(model, state, model.sample_rate)
 
+    def sintetizar_stream(
+        self,
+        texto: str,
+    ) -> Iterator[bytes]:
+        """Yields un PCM16 por chunk CONFORME LLEGA (streaming real, no batch)."""
+        if not texto or not texto.strip():
+            raise ValueError("texto vacío")
+        for ch in self._model.generate_audio_stream(self._voice_state, texto):
+            yield _a_pcm16([ch])
+
     def sintetizar(
         self,
         texto: str,
         clock: Callable[[], float] = time.perf_counter,
     ) -> tuple[bytes, int, float]:
-        """Texto -> (pcm16 bytes, sr, ttfa_ms). Mide hasta el primer chunk."""
-        if not texto or not texto.strip():
-            raise ValueError("texto vacío")
+        """Texto -> (pcm16 bytes, sr, ttfa_ms). Batch sobre el stream.
+
+        Sin validación propia a propósito: la única vive en sintetizar_stream
+        (una fuente de verdad; duplicarla enmascara mutantes entre ambas).
+        """
         t0 = clock()
-        chunks: list[Any] = []
+        total = bytearray()
         t_first: float | None = None
-        for ch in self._model.generate_audio_stream(self._voice_state, texto):
+        for pcm in self.sintetizar_stream(texto):
             if t_first is None:
                 t_first = clock()
-            chunks.append(ch)
+            total += pcm
         if t_first is None:
             raise ValueError("modelo no generó ningún chunk")
         ttfa_ms = (t_first - t0) * 1000.0
-        return _a_pcm16(chunks), self._sr, ttfa_ms
+        return bytes(total), self._sr, ttfa_ms
 
 
 def _a_pcm16(chunks: Iterable[Any]) -> bytes:
@@ -58,10 +70,10 @@ def _a_pcm16(chunks: Iterable[Any]) -> bytes:
     plano: list[float] = []
     for ch in chunks:
         datos = ch.tolist() if hasattr(ch, "tolist") else list(ch)
-        if isinstance(datos, (list, tuple)) and datos and isinstance(datos[0], (list, tuple)):
+        if isinstance(datos, list | tuple) and datos and isinstance(datos[0], list | tuple):
             for fila in datos:
                 plano.extend(float(x) for x in fila)
-        elif isinstance(datos, (list, tuple)):
+        elif isinstance(datos, list | tuple):
             plano.extend(float(x) for x in datos)
         else:
             plano.append(float(datos))
