@@ -143,7 +143,7 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 ├── scripts/
 │   ├── verificar_hardware.py   # wrapper fino hardware
 │   └── demo_traduccion.py      # wrapper fino traducción
-├── tests/                      # 55 tests, 100% cov, mutantes en CI
+├── tests/                      # 62 tests, 100% cov, mutantes en CI
 ├── .github/workflows/ci.yml
 ├── pyproject.toml              # ruff + mypy strict + pytest --cov-fail-under=90
 └── requirements.txt
@@ -189,7 +189,7 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 - [x] **Paso 3 — Medición** — presupuesto + medidor honesto (`p95`, `exc.elapsed_ms`, `186/186` mutantes)
 - [x] **Paso 4 — Audio virtual** — ruta por nombre, VB-CABLE (`src/traductor/audio/virtual.py`)
 - [ ] **Paso 5 — Teleprompter** — UI en vivo + deploy micro VM (nginx + TLS) — *siguiente*
-- [ ] Fase 2 — TTS (Chatterbox rechazado, ver ADR-010)
+- [ ] Fase 2 — TTS (Pocket aceptado, ver ADR-011)
 - [ ] Fase 3 — Conversión de voz (timbre de Kevin)
 
 ---
