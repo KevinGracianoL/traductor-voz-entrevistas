@@ -10,6 +10,11 @@
 # Smoke (una frase, valida WAV + latencia, guarda out_smoke/):
 #   $env:PYTHONPATH = "src"
 #   echo '{"texto": "hola mundo", "ref_audio": "ref.wav"}' | python scripts/tts_worker.py --out-dir out_smoke
-# Hipótesis sin medir: ~2-3 GB VRAM y 400-700 ms primer chunk en GTX 1650 Ti.
-# Medición real pendiente (inferencia + VRAM pico + latencia cold/warm).
+# Medición real CPU (venv-tts, Ryzen 5 4600H, 2026-09-07, commit 967e9d9):
+#   pip check -> ok | import chatterbox.mtl_tts -> ok
+#   carga modelo cold (incluye descarga HF ~16 min) -> 1092134 ms
+#   inferencia 1 frase CPU -> 48712 ms | WAV válido: mono 24 kHz, 82560 frames
+# GPU pendiente: venv-tts trae torch CPU; para CUDA instalar torch 2.6+cu124
+# desde pytorch.org y medir VRAM pico + latencia cold/warm en GTX 1650 Ti.
+# Hipótesis GPU sin medir: ~2-3 GB VRAM y 400-700 ms primer chunk.
 -e .[tts]
