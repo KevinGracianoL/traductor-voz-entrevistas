@@ -178,7 +178,7 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 | 007 | Teleprompter primero | Semanas vs meses, honestidad en entrevista |
 | 008 | Fallback automático | Una entrevista no es un log |
 | 009 | Dirección por fuente | Determinista, 0 ms, sin detector que falle en code-switching |
-| 010 | Chatterbox rechazado como TTS | Ver [ADR-010](docs/ADR-010-chatterbox-rechazado.md): 11.6 s warm / 3.6 GB medidos, sin co-residencia con Whisper |
+| 010 | Chatterbox rechazado como TTS | Ver [ADR-010](docs/ADR-010-chatterbox-rechazado.md): 17.4 s warm / 3.6 GB medidos, sin co-residencia con Whisper |
 
 ---
 

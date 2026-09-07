@@ -6,15 +6,18 @@
 
 ## Procedencia exacta de la medición
 
-- **Código medido:** `967e9d9` (`src/traductor/tts/` + worker; entre `967e9d9` y `a8ef6aa` no hay ningún cambio en `src/`, sólo config).
-- **Entorno medido:** los pins TTS fijados después en `a8ef6aa` (`requirements.txt`), instalados con `--no-deps` para proteger torch/numpy base.
+- **Base:** `967e9d9` — su `requirements.txt` no contiene ningún pin TTS
+  (verificado: 0 coincidencias), así que `pip install -r requirements.txt` resuelve limpio.
+- **Set experimental:** los pins TTS (luego fijados en `a8ef6aa`) instalados con
+  `--no-deps` para proteger torch/numpy base. Entre `967e9d9` y `a8ef6aa` no hay
+  ningún cambio en `src/` (solo config), así que el código medido es el mismo.
 - **Máquina:** Ryzen 5 4600H / GTX 1650 Ti 4 GB (driver 610.74) / Windows 11 + Python 3.11.
 
 ## Procedimiento autocontenido (reproduce la medición)
 
 ```powershell
 git fetch origin
-git checkout a8ef6aa          # código 967e9d9 + pins TTS (src/ idéntico entre ambos)
+git checkout 967e9d9          # base limpia: requirements.txt SIN pins TTS
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu132
@@ -72,9 +75,13 @@ import torch
 from traductor.tts.chatterbox import cargar_modelo, sintetizar
 t0=time.perf_counter(); m=cargar_modelo(device='cuda'); t1=time.perf_counter()
 print('carga ms:', round((t1-t0)*1000), '| VRAM MB:', round(torch.cuda.memory_allocated()/1024**2))
+def synced_ms(t0):
+    torch.cuda.synchronize()  # sin esto se mide el lanzamiento, no el cómputo
+    return (time.perf_counter()-t0)*1000.0
+
 for i,txt in enumerate(['hola mundo, esto es una prueba','cuéntame sobre un bug difícil']):
-    a=time.perf_counter(); wav,sr=sintetizar(txt,'ref.wav',m); b=time.perf_counter()
-    print(f'frase{i+1} ms:', round((b-a)*1000), 'sr:', sr)
+    a=time.perf_counter(); wav,sr=sintetizar(txt,'ref.wav',m)
+    print(f'frase{i+1} ms:', round(synced_ms(a)), 'sr:', sr)
 print('VRAM pico MB:', round(torch.cuda.max_memory_allocated()/1024**2))
 from traductor.tts.worker import guardar_wav
 from pathlib import Path
@@ -93,18 +100,22 @@ Método: latencia con `time.perf_counter()` alrededor de cada fase; VRAM con
 
 ## Resultados (salida real)
 
-| Qué | Resultado |
+| Qué | Resultado (con `synchronize`, worktree `967e9d9`) |
 |---|---|
-| Carga modelo (cache HF) | 22 579 ms |
+| Carga modelo (cache HF) | 23 442 ms |
 | VRAM tras carga | 3 075 MB |
-| Frase 1 (cold) | 26 119 ms |
-| Frase 2 (warm) | 11 613 ms |
+| Frase 1 (cold) | 53 227 ms |
+| Frase 2 (warm) | 17 397 ms |
 | VRAM pico | 3 712 MB |
-| WAV salida | mono, 24 kHz, 81 600 frames (~3.4 s), válido |
+| WAV salida | mono, 24 kHz, 83 520 frames (~3.5 s), válido |
+
+Nota: una primera medición sin `synchronize()` dio 26/11 s (subestima: mide el
+lanzamiento de kernels, no su término). Los valores de arriba, sincronizados,
+son los válidos.
 
 ## Decisión
 
-**Rechazado.** Warm 11 613 ms = 38.7× el presupuesto TTS (300 ms) y 5.8× el techo total (2 s);
+**Rechazado.** Warm 17 397 ms = 58× el presupuesto TTS (300 ms) y 8.7× el techo total (2 s);
 3 712 MB de 4 096 MB no dejan espacio para Whisper. Alternativas honestas: turnos
 (descargar un modelo para cargar el otro), GPU mayor, o un candidato que quepa con
 Whisper (<1 GB VRAM residente y <300 ms/frase).
