@@ -30,8 +30,8 @@ name = "traductor-voz-entrevistas"
 version = "0.1.0"
 dependencies = []
 
-[project.optional-dependencies]
-tts = ["chatterbox-tts==0.1.7"]
+# TTS opcional: NO hay extra [tts] a propósito — resolverlo instalaría
+# torch 2.6 y rompería el venv CUDA. Ver requirements-tts.txt (--no-deps).
 
 [tool.mutmut]
 source_paths = ["src/traductor/"]

@@ -1,20 +1,49 @@
-# TTS opcional (Chatterbox Multilingual, MIT) — entorno AISLADO.
-# chatterbox-tts==0.1.7 exige torch==2.6.0, torchaudio==2.6.0 y numpy<2,
-# incompatibles con requirements.txt (torch 2.13+cu132, numpy 2.4.4).
-# No instalar en el venv principal. Receta PowerShell:
-#   python -m venv venv-tts
-#   .\venv-tts\Scripts\Activate.ps1
-#   python -m pip install -e ".[tts]"
-#   python -m pip check
-#   python -c "import chatterbox.mtl_tts; print('import ok')"
-# Smoke (una frase, valida WAV + latencia, guarda out_smoke/):
-#   $env:PYTHONPATH = "src"
-#   echo '{"texto": "hola mundo", "ref_audio": "ref.wav"}' | python scripts/tts_worker.py --out-dir out_smoke
-# Medición real CPU (venv-tts, Ryzen 5 4600H, 2026-09-07, commit 967e9d9):
-#   pip check -> ok | import chatterbox.mtl_tts -> ok
-#   carga modelo cold (incluye descarga HF ~16 min) -> 1092134 ms
-#   inferencia 1 frase CPU -> 48712 ms | WAV válido: mono 24 kHz, 82560 frames
-# GPU pendiente: venv-tts trae torch CPU; para CUDA instalar torch 2.6+cu124
-# desde pytorch.org y medir VRAM pico + latencia cold/warm en GTX 1650 Ti.
-# Hipótesis GPU sin medir: ~2-3 GB VRAM y 400-700 ms primer chunk.
--e .[tts]
+# TTS opcional (Chatterbox Multilingual 0.1.7, MIT) — SOLO para venv principal.
+# Instalación probada (2026-09-07). El --no-deps es obligatorio: protege el
+# torch 2.13+cu132 / numpy 2.4.4 del venv (los pins de upstream son más
+# estrictos de lo necesario y pip los rompería resolviendo dependencias).
+#   pip install --no-deps -r requirements-tts.txt
+# Excepción: tokenizers==0.22.2 va en requirements.txt (transformers lo exige).
+#
+# MEDICIÓN REAL GPU (GTX 1650 Ti 4 GB, commit bf785c3, ref seno 10 s):
+#   carga (cache HF) -> 22579 ms | VRAM tras carga -> 3075 MB
+#   frase1 (cold) -> 26119 ms | frase2 (warm) -> 11613 ms
+#   VRAM pico -> 3712 MB | WAV válido: mono 24 kHz, 81600 frames
+# Conclusión: Chatterbox solo pica 3.6/4 GB → NO cabe con Whisper (~1 GB) a la
+# vez. TTS en vivo exige turnos o GPU mayor. ADR-003 (300 ms) no alcanzable así.
+#
+# Smoke: $env:PYTHONPATH = "src"
+#   echo '{"texto": "hola mundo", "ref_audio": "ref.wav"}' | python scripts/tts_worker.py
+chatterbox-tts==0.1.7
+transformers==5.2.0
+diffusers==0.29.0
+librosa==0.11.0
+safetensors==0.5.3
+conformer==0.3.2
+s3tokenizer==0.3.0
+resemble-perth==1.0.1
+omegaconf==2.3.1
+einops==0.8.2
+pykakasi==2.3.0
+pyloudnorm==0.2.0
+spacy-pkuseg==1.0.1
+onnx==1.22.0
+numba==0.67.0
+llvmlite==0.49.0
+audioread==3.1.0
+scikit-learn==1.9.0
+pooch==1.9.0
+soxr==1.1.0
+lazy-loader==0.5
+msgpack==1.2.2
+antlr4-python3-runtime==4.9.3
+jaconv==0.5.0
+ml-dtypes==0.5.4
+narwhals==2.25.0
+threadpoolctl==3.6.0
+decorator==5.3.1
+cloudpickle==3.1.2
+deprecated==1.3.1
+typer-slim==0.24.0
+importlib-metadata==9.0.1
+zipp==4.1.0
