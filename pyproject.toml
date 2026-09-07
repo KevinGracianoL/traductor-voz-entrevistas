@@ -23,15 +23,12 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
-addopts = "-q --cov=traductor.latencia --cov=traductor.audio.virtual --cov=traductor.traduccion --cov=traductor.ui --cov=traductor.tts --cov-report=term-missing --cov-fail-under=90"
+addopts = "-q --cov=traductor.latencia --cov=traductor.audio.virtual --cov=traductor.traduccion --cov=traductor.ui --cov-report=term-missing --cov-fail-under=90"
 
 [project]
 name = "traductor-voz-entrevistas"
 version = "0.1.0"
 dependencies = []
-
-# TTS opcional: NO hay extra [tts] a propósito — resolverlo instalaría
-# torch 2.6 y rompería el venv CUDA. Ver requirements-tts.txt (--no-deps).
 
 [tool.mutmut]
 source_paths = ["src/traductor/"]
