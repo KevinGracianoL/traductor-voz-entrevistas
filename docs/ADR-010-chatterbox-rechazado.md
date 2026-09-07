@@ -4,34 +4,94 @@
 - **Contexto:** Fase 2 necesita TTS offline con clonación de voz que conviva con Whisper int8 (~1 GB) en una GTX 1650 Ti de 4 GB, dentro del presupuesto ADR-003.
 - **Candidato:** `chatterbox-tts==0.1.7` (MIT, Resemble AI). XTTS-v2 descartado antes: pide 4-6 GB él solo + licencia no-comercial (CPML).
 
-## Entorno medido
+## Procedencia exacta de la medición
 
-- Laptop: Ryzen 5 4600H / GTX 1650 Ti 4 GB (driver 610.74) / Windows 11 + Python 3.11
-- venv principal + `pip install --no-deps` del set TTS (protege torch/numpy base):
-  `chatterbox-tts==0.1.7`, `transformers==5.2.0`, `diffusers==0.29.0`, `librosa==0.11.0`,
-  `safetensors==0.5.3`, `conformer==0.3.2`, `s3tokenizer==0.3.0`, `resemble-perth==1.0.1`,
-  `omegaconf==2.3.1`, `einops==0.8.2`, `pykakasi==2.3.0`, `pyloudnorm==0.2.0`,
-  `spacy-pkuseg==1.0.1`, `onnx==1.22.0`, `numba==0.67.0`, `llvmlite==0.49.0`,
-  `audioread==3.1.0`, `scikit-learn==1.9.0`, `pooch==1.9.0`, `soxr==1.1.0`,
-  `lazy-loader==0.5`, `msgpack==1.2.2`, `antlr4-python3-runtime==4.9.3`,
-  `jaconv==0.5.0`, `ml-dtypes==0.5.4`, `narwhals==2.25.0`, `threadpoolctl==3.6.0`,
-  `decorator==5.3.1`, `cloudpickle==3.1.2`, `deprecated==1.3.1`, `typer-slim==0.24.0`,
-  `importlib-metadata==9.0.1`, `zipp==4.1.0`, salvo `tokenizers==0.22.2`
-  (transformers 5.2.0 lo exige; el resto corre sobre torch 2.13+cu132 y numpy 2.4.4,
-  más laxos que los pins de upstream).
-- Commit medido: `bf785c3` (PR #10). Pesos desde HuggingFace cache local.
+- **Código medido:** `967e9d9` (`src/traductor/tts/` + worker; entre `967e9d9` y `a8ef6aa` no hay ningún cambio en `src/`, sólo config).
+- **Entorno medido:** los pins TTS fijados después en `a8ef6aa` (`requirements.txt`), instalados con `--no-deps` para proteger torch/numpy base.
+- **Máquina:** Ryzen 5 4600H / GTX 1650 Ti 4 GB (driver 610.74) / Windows 11 + Python 3.11.
 
-## Comandos reproducibles
+## Procedimiento autocontenido (reproduce la medición)
+
+```powershell
+git fetch origin
+git checkout a8ef6aa          # código 967e9d9 + pins TTS (src/ idéntico entre ambos)
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu132
+# Set TTS sin resolver dependencias (protege torch 2.13+cu132 / numpy 2.4.4):
+pip install --no-deps chatterbox-tts==0.1.7 transformers==5.2.0 diffusers==0.29.0 `
+  librosa==0.11.0 safetensors==0.5.3 conformer==0.3.2 s3tokenizer==0.3.0 `
+  resemble-perth==1.0.1 omegaconf==2.3.1 einops==0.8.2 pykakasi==2.3.0 `
+  pyloudnorm==0.2.0 spacy-pkuseg==1.0.1 onnx==1.22.0 numba==0.67.0 `
+  llvmlite==0.49.0 audioread==3.1.0 scikit-learn==1.9.0 pooch==1.9.0 `
+  soxr==1.1.0 lazy-loader==0.5 msgpack==1.2.2 antlr4-python3-runtime==4.9.3 `
+  jaconv==0.5.0 ml-dtypes==0.5.4 narwhals==2.25.0 threadpoolctl==3.6.0 `
+  decorator==5.3.1 cloudpickle==3.1.2
+pip install tokenizers==0.22.2   # transformers 5.2.0 lo exige (repo trae 0.23.1)
+python -m pip check              # ver salida real abajo: entorno experimental
+python -c "import chatterbox.mtl_tts; print('import ok')"
+```
+
+`pip check` real durante la medición (entorno experimental fuera de metadata, no "limpio"):
+
+```
+chatterbox-tts 0.1.7 requires gradio, which is not installed.
+diffusers 0.29.0 requires importlib-metadata, which is not installed.
+pykakasi 2.3.0 requires deprecated, which is not installed.
+transformers 5.2.0 requires typer-slim, which is not installed.
+chatterbox-tts 0.1.7 has requirement numpy<2.0.0,>=1.24.0; python_version < "3.13", but you have numpy 2.4.4.
+chatterbox-tts 0.1.7 has requirement torch==2.6.0; python_version < "3.14", but you have torch 2.13.0+cu132.
+chatterbox-tts 0.1.7 has requirement torchaudio==2.6.0; python_version < "3.14", but you have torchaudio 2.11.0.
+```
+
+(Gradio es sólo GUI y no se usa; los 4 paquetes menores se instalaron después sin cambiar el resultado. La inferencia corre pese a los 3 overrides de versión — probado, no supuesto.)
+
+## Entrada determinista: `ref.wav` sintético (sin voz personal)
+
+```python
+import math, struct, wave
+sr, dur = 24000, 10.0
+frames = bytearray()
+for i in range(int(sr * dur)):
+    t = i / sr
+    v = 0.5 * math.sin(2 * math.pi * 220 * t) + 0.25 * math.sin(2 * math.pi * 440 * t)
+    frames += struct.pack("<h", max(-32768, min(32767, int(v * 32767))))
+with wave.open("ref.wav", "wb") as f:
+    f.setnchannels(1); f.setsampwidth(2); f.setframerate(sr)
+    f.writeframes(bytes(frames))
+```
+
+## Smoke + validación + medición
 
 ```powershell
 $env:PYTHONPATH = "src"
-venv\Scripts\python.exe -m pip check        # limpio salvo gradio (solo GUI) + 3 overrides probados
-venv\Scripts\python.exe -c "import chatterbox.mtl_tts; print('import ok')"
-# Smoke (ref: seno 220 Hz 10 s, 24 kHz, mono — sintético, sin voz personal):
-echo '{"texto": "hola mundo", "ref_audio": "ref.wav"}' | python scripts/tts_worker.py --out-dir out_smoke
+# En a8ef6aa existen src/traductor/tts/ y scripts/tts_worker.py (se archivaron después).
+venv\Scripts\python.exe -c "
+import sys, time; sys.path.insert(0, 'src')
+import torch
+from traductor.tts.chatterbox import cargar_modelo, sintetizar
+t0=time.perf_counter(); m=cargar_modelo(device='cuda'); t1=time.perf_counter()
+print('carga ms:', round((t1-t0)*1000), '| VRAM MB:', round(torch.cuda.memory_allocated()/1024**2))
+for i,txt in enumerate(['hola mundo, esto es una prueba','cuéntame sobre un bug difícil']):
+    a=time.perf_counter(); wav,sr=sintetizar(txt,'ref.wav',m); b=time.perf_counter()
+    print(f'frase{i+1} ms:', round((b-a)*1000), 'sr:', sr)
+print('VRAM pico MB:', round(torch.cuda.max_memory_allocated()/1024**2))
+from traductor.tts.worker import guardar_wav
+from pathlib import Path
+guardar_wav(Path('out_smoke.wav'), wav, sr)
+"
+# Validar WAV con stdlib (el worker del commit medido lo guarda igual):
+venv\Scripts\python.exe -c "
+import wave
+f = wave.open('out_smoke.wav','rb')
+print(f.getnchannels(), f.getframerate(), f.getnframes())
+"
 ```
 
-## Medición (GPU, `time.perf_counter`, `torch.cuda.memory_allocated/max_memory_allocated`)
+Método: latencia con `time.perf_counter()` alrededor de cada fase; VRAM con
+`torch.cuda.memory_allocated()` / `torch.cuda.max_memory_allocated()` (pico del proceso).
+
+## Resultados (salida real)
 
 | Qué | Resultado |
 |---|---|
@@ -52,5 +112,5 @@ Whisper (<1 GB VRAM residente y <300 ms/frase).
 ## Trazabilidad
 
 - PR #10 (historial: adapter + worker + tests del prototipo, eliminados de `src/` al rechazar)
-- `requirements-tts.txt` eliminado con el prototipo; receta archivada en este ADR
-- `pip check` limpio salvo avisos documentados arriba
+- Prototipo recuperable: `git checkout 967e9d9 -- src/traductor/tts scripts/tts_worker.py tests/test_tts_*`
+- Pesos del modelo: cache de HuggingFace (`~/.cache/huggingface`), no versionados
