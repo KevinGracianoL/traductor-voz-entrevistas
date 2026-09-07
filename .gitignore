@@ -1,5 +1,6 @@
 # Entorno virtual — cientos de MB regenerables
 venv/
+venv-tts/
 .venv/
 env/
 

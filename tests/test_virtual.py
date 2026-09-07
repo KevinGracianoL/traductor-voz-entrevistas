@@ -36,9 +36,17 @@ def test_clasificar_vacio() -> None:
 
 def test_seleccionar_ruta_virtual_y_fisico() -> None:
     disps = ["Realtek Mic", "CABLE Output", "Auriculares"]
-    ruta = seleccionar_ruta(disps, patron_virtual="cable")
+    ruta = seleccionar_ruta(disps)
     assert ruta["entrevistador"] == "CABLE Output"
     assert ruta["usuario"] == "Realtek Mic"
+
+
+def test_seleccionar_ruta_virtual_mic_es_virtual() -> None:
+    """Una sola fuente de verdad: si es_virtual dice True, se selecciona."""
+    assert es_virtual("Virtual Mic") is True
+    ruta = seleccionar_ruta(["Virtual Mic"])
+    assert ruta["entrevistador"] == "Virtual Mic"
+    assert ruta["usuario"] is None
 
 
 def test_seleccionar_ruta_sin_virtual() -> None:
@@ -66,13 +74,15 @@ def test_validar_ruta_ok() -> None:
 
 
 def test_validar_ruta_sin_virtual_raise() -> None:
-    with pytest.raises(ValueError, match="sin dispositivo virtual"):
+    with pytest.raises(ValueError) as excinfo:
         validar_ruta({"entrevistador": None, "usuario": "Mic"})
+    assert str(excinfo.value) == "sin dispositivo virtual: instala VB-CABLE para entrevistador"
 
 
 def test_validar_ruta_vacia_raise() -> None:
-    with pytest.raises(ValueError, match="ruta vacía"):
+    with pytest.raises(ValueError) as excinfo:
         validar_ruta({"entrevistador": None, "usuario": None})
+    assert str(excinfo.value) == "ruta vacía: no hay dispositivos físicos ni virtuales"
 
 
 def test_validar_ruta_virtual_sin_mic_no_lanza() -> None:

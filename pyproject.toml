@@ -1,3 +1,10 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"
@@ -18,11 +25,13 @@ ignore_missing_imports = true
 pythonpath = ["src"]
 addopts = "-q --cov=traductor.latencia --cov=traductor.audio.virtual --cov=traductor.traduccion --cov=traductor.ui --cov-report=term-missing --cov-fail-under=90"
 
+[project]
+name = "traductor-voz-entrevistas"
+version = "0.1.0"
+dependencies = []
+
 [tool.mutmut]
 source_paths = ["src/traductor/"]
 pytest_add_cli_args_test_selection = ["tests/"]
 pytest_add_cli_args = ["--no-cov"]
 mutate_only_covered_lines = true
-# patron_virtual default es equivalente por .lower() -> inmatable
-# Los 2 raise son textos de error no verificables -> patrones específicos de audio/virtual.py
-do_not_mutate_patterns = ['patron_virtual: str = "', 'ruta vacía', 'sin dispositivo virtual']
