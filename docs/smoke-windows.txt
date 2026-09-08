@@ -32,3 +32,20 @@ re-import torch OK True
 
 r5 (copy escribe basura y revienta):  b.dll = VIEJA-BUENA | b.dll.tmp = no
 r6 (tmp huerfano sin b.dll):          b.dll AUSENTE       (no se promueve)
+
+--- Alcance / que NO cubre este smoke ---
+
+Este smoke ejerce el camino feliz en hardware real: re-ejecucion con destino
+poblado bajo lock del AV y co-existencia torch-CUDA-13 + ctranslate2-cublas-12
+sin envenenar la resolucion (WinError 127). Lo que NO detecta (lo cubren los
+tests parametrizados con dobles, no el smoke):
+
+- Escapado del keeper con rutas Windows raras (backslash final, apostrofo,
+  usernames no-ASCII): la ruta real de esta maquina compila incluso con el
+  codigo roto de r2/r3.
+- Modos de fallo "sucios": copy que escribe basura y revienta (r5) y .tmp
+  huerfano promovido (r6) — este smoke no induce locks permanentes ni
+  escrituras truncadas a proposito.
+
+No borrar los tests parametrizados argumentando "ya tenemos smoke": son
+evidencias complementarias.
