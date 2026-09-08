@@ -20,6 +20,7 @@
   2. **Recomendado:** voz de Kevin en inglés + subtítulos en español.
   3. Respaldo: voz inglesa genérica (Supertonic/Piper) + subtítulos.
   4. Mínimo: subtítulos en ambos sentidos.
+  - Nota de VRAM: al bajar de nivel, `cerrar()` del backend suelta el modelo pero el **allocator de torch puede retener el pool** (la VRAM no vuelve al driver automáticamente). Si la bajada necesita VRAM libre, usar `torch.cuda.empty_cache()` (best-effort) o reiniciar el worker del TTS.
 - **Validación de artefactos (antes de enviar audio al micrófono virtual):**
   - **ASR de retorno** sobre el audio sintetizado; comparar lo reconocido con la traducción original; detectar palabras añadidas, omitidas o repetidas.
   - Rechazar **clipping**, **silencios anómalos** y **duración absurda**.

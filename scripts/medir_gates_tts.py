@@ -1,15 +1,23 @@
 """Mide los gates de aceptación del motor TTS en la máquina objetivo (ADR-014).
 
-Carga el motor candidato (inyectado; aún sin elegir, ADR-011) Y faster-whisper
-co-residente (tiny int8; el "~1 GB" del ADR es un supuesto, la primera corrida
-lo mide). Mide TTFA caliente p95 con el medidor honesto (n>=20, math.ceil,
-None si falta) y la VRAM TOTAL a nivel driver (`vram_ocupada_mib`, incluye
-CTranslate2). La foto de Whisper se toma justo tras su warm-up (delta aislado);
-la de co-residencia, después de las síntesis TTFA.
+Carga el motor candidato (primario: XTTS-v2 vía fork coqui-tts, ADR-011) Y
+faster-whisper co-residente (el "~1 GB" del ADR es un supuesto, la primera
+corrida lo mide). Mide TTFA caliente p95 con el medidor honesto (n>=20,
+math.ceil, None si falta), la VRAM TOTAL a nivel driver (`vram_ocupada_mib`,
+incluye CTranslate2) y la RAM del sistema (psutil). La foto de Whisper se toma
+justo tras su warm-up (delta aislado); la de co-residencia, después de las
+síntesis TTFA.
+
+Los gates de SESIÓN (pipeline p95, OOM, memoria, artefactos, A/B, endurance)
+los mide la corrida larga del ADR-019 y se pasan por flags: sin ellos quedan
+en None = FALLA (honesto: un "go" requiere la evidencia de sesión). Con todos
+los flags, el harness PUEDE emitir un go.
 
 Uso:
     $env:PYTHONPATH = "src"
     python scripts/medir_gates_tts.py --warmup-audio tu_voz.wav
+    # + flags de sesión tras la corrida larga: --pipeline-p95 1500 --no-oom
+    #   --memoria_estable --no-artefactos --voz_reconocible_ab --endurance_90min
 
 El CI NO lo ejecuta: requiere GPU + modelo + Whisper. La salida se pega como
 evidencia en el ADR-014.
@@ -17,7 +25,6 @@ evidencia en el ADR-014.
 
 from __future__ import annotations
 
-import argparse
 import time
 from functools import partial
 from pathlib import Path
@@ -25,7 +32,8 @@ from typing import Any
 
 from traductor.hardware.cuda import vram_ocupada_mib
 from traductor.latencia.medidor import agregar_medicion, medir_tiempo, resumen_estadisticas
-from traductor.tts.gates import MedicionTts, cabe_en_gates, evaluar_gates, resumen_gates
+from traductor.tts.gates import cabe_en_gates, evaluar_gates, resumen_gates
+from traductor.tts.harness import componer_medicion, medir_ram_mib, parser_harness
 from traductor.tts.modelos import VoiceProfile
 
 PERFIL = VoiceProfile(id="benchmark", nombre="Benchmark", muestras=("ref.wav",))
@@ -101,26 +109,10 @@ def _medir_ttfa_p95(motor: Any, n: int) -> float | None:
     return resumen_estadisticas(registro)["ttfa"]["p95"]
 
 
-def _wav_existente(ruta: str) -> Path:
-    """Validación de argparse: falla antes de tocar la GPU (r8)."""
-    p = Path(ruta)
-    if not p.is_file():
-        raise argparse.ArgumentTypeError(f"el WAV de warm-up no existe: {ruta}")
-    return p
-
-
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     import torch
 
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--warmup-audio",
-        type=_wav_existente,
-        required=True,
-        help="WAV de voz real para el warm-up de Whisper (obligatorio: sin el "
-        "decoder ejercitado la VRAM subestima y el harness hace raise)",
-    )
-    args = parser.parse_args()
+    args = parser_harness().parse_args(argv)
 
     motor = _cargar_motor()
     vram_base = vram_ocupada_mib(torch.cuda)  # motor residente, Whisper aún no
@@ -142,8 +134,9 @@ def main() -> None:
     # Foto de co-residencia DESPUÉS de las síntesis TTFA: Whisper + motor con
     # sus reservas reales. Es el número del gate.
     vram = vram_ocupada_mib(torch.cuda)
+    ram = medir_ram_mib()
     del whisper, motor  # liberar DESPUÉS de la foto, no antes
-    medicion = MedicionTts(ttfa_caliente_p95_ms=ttfa, vram_mib=vram)
+    medicion = componer_medicion(ttfa, vram, ram, args)
     resultados = evaluar_gates(medicion)
     if ttfa is None:
         print(f"TTFA caliente p95: sin medir (n<{N_REPETICIONES})")
@@ -153,6 +146,10 @@ def main() -> None:
         print("VRAM co-residente: sin medir (sin CUDA)")
     else:
         print(f"VRAM co-residente: {vram:.1f} MiB (compara con nvidia-smi ±100 MiB)")
+    if ram is None:
+        print("RAM total: sin medir (psutil no instalado)")
+    else:
+        print(f"RAM total: {ram:.1f} MiB")
     print()
     print(resumen_gates(resultados))
     print()
