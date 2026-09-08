@@ -60,12 +60,12 @@ flowchart LR
 | ¿Legible y sin bugs? | **ruff** | `select = ["E","F","B","SIM","UP","I","S"]` |
 | ¿Los tipos encajan? | **mypy --strict** | errores de tipo = CI rojo |
 | ¿Hace lo que dice? | **pytest** | `--cov-fail-under=90` |
-| ¿Qué no probé? | **coverage** | **100 %** (227 stmts, 0 sin cubrir) |
+| ¿Qué no probé? | **coverage** | **100 %** (278 stmts, 0 sin cubrir) |
 | ¿Detectaría un bug? | **mutmut** | **357/357 mutantes eliminados**, 0 supervivientes |
 
 > `mutmut` muta tu código a propósito (cambia `<=`→`<`, `*1000`→`/1000`, borra branches…) y exige que **alguien** lo detecte. El gate CI falla si `survived > 0`. Se verificó a mano rompiendo el código y viendo el gate rechazarlo.
 >
-> **76 tests** cubren el happy path **y** los modos de fallo: locks de antivirus, escrituras truncadas, `.tmp` huérfanos, rutas Windows con backslash/apóstrofo.
+> **91 tests** cubren el happy path **y** los modos de fallo: locks de antivirus, escrituras truncadas, `.tmp` huérfanos, rutas Windows con backslash/apóstrofo.
 
 ---
 
@@ -146,13 +146,17 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 │   ├── audio/captura.py        # mic → texto (RealtimeSTT)
 │   ├── audio/virtual.py        # ruta determinista por nombre (VB-CABLE)
 │   ├── traduccion/argos.py     # EN↔ES offline
+│   ├── tts/                    # contratos neutrales (ADR-011, Propuesto)
+│   │   ├── modelos.py          # VoiceProfile, AudioResult, Salud
+│   │   ├── backend.py          # TTSBackend (Protocol)
+│   │   └── tienda.py           # VoiceProfileStore (Protocol)
 │   └── latencia/
 │       ├── presupuesto.py      # ¿cabe? ¿quién es más lento?
 │       └── medidor.py          # reloj inyectable, p50/p95 honesto
 ├── scripts/                    # wrappers finos: hardware, traducción
 ├── setup_dlls.py               # CUDA 12/13 coexistiendo (Windows, locks AV)
 ├── docs/                       # ADRs + evidencia smoke Windows
-├── tests/                      # 76 tests, 100 % cov, mutantes en CI
+├── tests/                      # 91 tests, 100 % cov, mutantes en CI
 └── .github/workflows/ci.yml    # 5 gates que fallan el PR si algo se rompe
 ```
 
@@ -183,7 +187,8 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 - [x] **Paso 4 — Audio virtual** — ruta por nombre, VB-CABLE
 - [x] **Paso 5 — Teleprompter** — UI en vivo + deploy (nginx + TLS)
 - [x] **Fase 2a — DLLs CUDA en Windows** — torch 2.13 (CUDA 13) conviviendo con ctranslate2 (CUDA 12)
-- [ ] **Fase 2b — TTS** — contratos neutrales; Chatterbox descartado (ADR-010); benchmark ASR/XTTS en roadmap
+- [x] **Fase 2b — Contratos TTS** — `VoiceProfile`/`VoiceProfileStore`/`TTSBackend` (ADR-011, Propuesto)
+- [ ] **Fase 2c — TTS** — worker XTTS contra los contratos; benchmark ASR bidireccional en roadmap
 - [ ] **Fase 3 — Conversión de voz** — timbre de Kevin
 
 ---
