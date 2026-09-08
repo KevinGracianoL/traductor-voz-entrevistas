@@ -96,7 +96,8 @@ class BackendFake:
 
 
 class SinCerrar:
-    """Falta el miembro `cerrar`: runtime_checkable detecta miembros ausentes."""
+    """Falta `cerrar`: isinstance detecta miembros ausentes, no firmas
+    incompatibles: eso lo cubre mypy."""
 
     def sintetizar(self, texto: str, perfil: VoiceProfile) -> AudioResult:
         return AudioResult(datos=b"x", formato="wav")
