@@ -60,12 +60,12 @@ flowchart LR
 | ¿Legible y sin bugs? | **ruff** | `select = ["E","F","B","SIM","UP","I","S"]` |
 | ¿Los tipos encajan? | **mypy --strict** | errores de tipo = CI rojo |
 | ¿Hace lo que dice? | **pytest** | `--cov-fail-under=90` |
-| ¿Qué no probé? | **coverage** | **100 %** (280 stmts, 0 sin cubrir) |
+| ¿Qué no probé? | **coverage** | **100 %** (351 stmts, 0 sin cubrir) |
 | ¿Detectaría un bug? | **mutmut** | **357/357 mutantes eliminados**, 0 supervivientes |
 
 > `mutmut` muta tu código a propósito (cambia `<=`→`<`, `*1000`→`/1000`, borra branches…) y exige que **alguien** lo detecte. El gate CI falla si `survived > 0`. Se verificó a mano rompiendo el código y viendo el gate rechazarlo.
 >
-> **92 tests** cubren el happy path **y** los modos de fallo: locks de antivirus, escrituras truncadas, `.tmp` huérfanos, rutas Windows con backslash/apóstrofo.
+> **115 tests** cubren el happy path **y** los modos de fallo: locks de antivirus, escrituras truncadas, `.tmp` huérfanos, rutas Windows con backslash/apóstrofo.
 
 ---
 
@@ -146,6 +146,9 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 │   ├── audio/captura.py        # mic → texto (RealtimeSTT)
 │   ├── audio/virtual.py        # ruta determinista por nombre (VB-CABLE)
 │   ├── traduccion/argos.py     # EN↔ES offline
+│   ├── asr/                    # benchmark ASR (ADR-012, Propuesto)
+│   │   ├── wer.py              # WER puro (Levenshtein por palabras)
+│   │   └── benchmark.py        # agregación p50/p95 + tabla comparativa
 │   ├── tts/                    # contratos neutrales (ADR-011, Propuesto)
 │   │   ├── modelos.py          # VoiceProfile, AudioResult, Salud
 │   │   ├── backend.py          # TTSBackend (Protocol)
@@ -156,7 +159,7 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 ├── scripts/                    # wrappers finos: hardware, traducción
 ├── setup_dlls.py               # CUDA 12/13 coexistiendo (Windows, locks AV)
 ├── docs/                       # ADRs + evidencia smoke Windows
-├── tests/                      # 92 tests, 100 % cov, mutantes en CI
+├── tests/                      # 115 tests, 100 % cov, mutantes en CI
 └── .github/workflows/ci.yml    # 5 gates que fallan el PR si algo se rompe
 ```
 
@@ -188,7 +191,8 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 - [x] **Paso 5 — Teleprompter** — UI en vivo + deploy (nginx + TLS)
 - [x] **Fase 2a — DLLs CUDA en Windows** — torch 2.13 (CUDA 13) conviviendo con ctranslate2 (CUDA 12)
 - [x] **Fase 2b — Contratos TTS** — `VoiceProfile`/`VoiceProfileStore`/`TTSBackend` (ADR-011, Propuesto)
-- [ ] **Fase 2c — TTS** — worker TTS contra los contratos; benchmark ASR bidireccional en roadmap
+- [x] **Fase 2c — Benchmark ASR** — WER + p50/p95: faster-whisper vs moonshine (ADR-012, Propuesto)
+- [ ] **Fase 2d — TTS** — worker TTS contra los contratos
 - [ ] **Fase 3 — Conversión de voz** — timbre de Kevin
 
 ---
@@ -200,3 +204,4 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 *Privacidad por diseño: cero audios de entrevistas reales y cero credenciales en el historial del repo.*
 
 </div>
+
