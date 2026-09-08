@@ -60,12 +60,12 @@ flowchart LR
 | ¿Legible y sin bugs? | **ruff** | `select = ["E","F","B","SIM","UP","I","S"]` |
 | ¿Los tipos encajan? | **mypy --strict** | errores de tipo = CI rojo |
 | ¿Hace lo que dice? | **pytest** | `--cov-fail-under=90` |
-| ¿Qué no probé? | **coverage** | **100 %** (603 stmts, 0 sin cubrir) |
+| ¿Qué no probé? | **coverage** | **100 %** (611 stmts, 0 sin cubrir) |
 | ¿Detectaría un bug? | **mutmut** | **0 supervivientes** — el gate CI falla si `survived > 0` |
 
 > `mutmut` muta tu código a propósito (cambia `<=`→`<`, `*1000`→`/1000`, borra branches…) y exige que **alguien** lo detecte. El gate CI falla si `survived > 0`. Se verificó a mano rompiendo el código y viendo el gate rechazarlo.
 >
-> **189 tests** cubren el happy path **y** los modos de fallo: locks de antivirus, escrituras truncadas, `.tmp` huérfanos, rutas Windows con backslash/apóstrofo.
+> **191 tests** cubren el happy path **y** los modos de fallo: locks de antivirus, escrituras truncadas, `.tmp` huérfanos, rutas Windows con backslash/apóstrofo.
 
 ---
 
@@ -165,7 +165,7 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 ├── scripts/                    # wrappers finos: hardware, traducción
 ├── setup_dlls.py               # CUDA 12/13 coexistiendo (Windows, locks AV)
 ├── docs/                       # ADRs + evidencia smoke Windows
-├── tests/                      # 189 tests, 100 % cov, mutantes en CI
+├── tests/                      # 191 tests, 100 % cov, mutantes en CI
 └── .github/workflows/ci.yml    # 5 gates que fallan el PR si algo se rompe
 ```
 
@@ -212,6 +212,7 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 *Privacidad por diseño: cero audios de entrevistas reales y cero credenciales en el historial del repo.*
 
 </div>
+
 
 
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import time
 from functools import partial
+from pathlib import Path
 from typing import Any
 
 from traductor.hardware.cuda import vram_ocupada_mib
@@ -41,6 +42,37 @@ def _cargar_whisper() -> Any:
     return WhisperModel("tiny", device="cuda", compute_type="int8_float16")
 
 
+def _generar_wav_silencio(duracion_s: float = 1.0) -> Path:
+    """WAV mono 16-bit de silencio: basta para forzar la primera inferencia."""
+    import tempfile
+    import wave
+
+    sr = 16000
+    ruta = Path(tempfile.gettempdir()) / "traductor_whisper_warmup.wav"
+    with wave.open(str(ruta), "wb") as fh:
+        fh.setnchannels(1)
+        fh.setsampwidth(2)
+        fh.setframerate(sr)
+        fh.writeframes(b"\x00\x00" * int(sr * duracion_s))
+    return ruta
+
+
+def _medir_vram_con_whisper(whisper: Any) -> float | None:
+    """VRAM usada (MiB) con Whisper co-residente y la PRIMERA inferencia hecha.
+
+    CTranslate2 reserva workspace/KV/beam en la primera `transcribe()`, no en
+    `__init__` (r1 del PR #15). `transcribe()` devuelve un generador: se drena
+    con `list()` o la inferencia no ocurre y el warm-up es decorativo. Después
+    se mide a nivel driver (`vram_ocupada_mib`).
+    """
+    import torch
+
+    audio = _generar_wav_silencio()
+    segmentos, _ = whisper.transcribe(str(audio), language="es")
+    list(segmentos)
+    return vram_ocupada_mib(torch.cuda)
+
+
 def _medir_ttfa_p95(motor: Any, n: int) -> float | None:
     """TTFA caliente p95, con el medidor honesto (math.ceil, None si n<20)."""
     motor.sintetizar(TEXTO, PERFIL)  # warm-up
@@ -54,21 +86,11 @@ def _medir_ttfa_p95(motor: Any, n: int) -> float | None:
     return resumen_estadisticas(registro)["ttfa"]["p95"]
 
 
-def _medir_vram_con_asr(whisper: Any) -> float | None:
-    """VRAM usada (MiB) con Whisper y el motor co-residentes, a nivel driver.
-
-    `whisper` se pasa para mantener el modelo vivo durante la medición: el
-    gate mide la VRAM total del dispositivo (incluye lo que CTranslate2
-    reserva fuera del allocator de torch).
-    """
-    return vram_ocupada_mib()
-
-
 def main() -> None:
     motor = _cargar_motor()
     whisper = _cargar_whisper()
     ttfa = _medir_ttfa_p95(motor, N_REPETICIONES)
-    vram = _medir_vram_con_asr(whisper)
+    vram = _medir_vram_con_whisper(whisper)
     medicion = MedicionTts(ttfa_caliente_p95_ms=ttfa, vram_mib=vram)
     resultados = evaluar_gates(medicion)
     if ttfa is None:
