@@ -1,9 +1,36 @@
 """Tests de setup_dlls — corren siempre (tmp_path, sin venv real)."""
 
 import runpy
+import sys
+import types
 from pathlib import Path
 
+import pytest
+
 from setup_dlls import dirs_cuda, escribir_keeper, instalar, plan_dlls
+
+
+class _Handle:
+    """Handle falso observable (os.add_dll_directory no existe en Linux)."""
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+
+
+class _FakeOs(types.ModuleType):
+    """Módulo os falso: add_dll_directory observable (no existe en Linux)."""
+
+    def __init__(self) -> None:
+        super().__init__("os")
+        self.registrados: list[str] = []
+
+    def add_dll_directory(self, path: str) -> _Handle:
+        self.registrados.append(path)
+        return _Handle(path)
+
+
+def _fake_os() -> _FakeOs:
+    return _FakeOs()
 
 
 def test_dirs_cuda_ordena_destino_primero(tmp_path: Path) -> None:
@@ -33,14 +60,20 @@ def test_escribir_keeper_contenido(tmp_path: Path) -> None:
     assert Path(pth).read_text(encoding="utf-8").strip() == "import zz_nvidia_dlls"
 
 
-def test_keeper_ejecuta_y_conserva_handles(tmp_path: Path) -> None:
-    """El keeper generado registra cada dir y conserva los handles."""
+def test_keeper_ejecuta_y_conserva_handles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """El keeper generado registra cada dir y conserva los handles (también en Linux)."""
     sub = tmp_path / "bin"
     sub.mkdir()
     keeper, _ = escribir_keeper(str(tmp_path), [str(sub)])
+    fake_os = _fake_os()
+    monkeypatch.setitem(sys.modules, "os", fake_os)
     ns = runpy.run_path(str(keeper))
-    assert "_HANDLES" in ns
+    assert fake_os.registrados == [str(sub)]
     assert len(ns["_HANDLES"]) == 1
+    assert ns["_HANDLES"][0].path == str(sub)
 
 
 def test_instalar_copia_y_registra_en_arbol_falso(tmp_path: Path) -> None:
