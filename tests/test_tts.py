@@ -1,8 +1,12 @@
 """Tests de los contratos neutrales de TTS — dominio + protocolos + fakes.
 
 El PR #12 NO implementa un backend TTS: define los contratos contra los que se
-escribirán los PRs siguientes (worker XTTS, gates de latencia). Estos tests
+escribirán los PRs siguientes (worker TTS, gates de latencia). Estos tests
 fijan la forma del contrato y prueban que un fake cualquiera lo satisface.
+
+Nota sobre `isinstance` + `runtime_checkable`: solo comprueba que EXISTAN los
+miembros, no sus firmas. La conformidad de firmas la exige `mypy .` en CI
+(`mypy archivo.py` suelto no resuelve `traductor.*` y el gate se volvería hueco).
 """
 
 import pytest
@@ -73,6 +77,11 @@ def test_salud_detalle() -> None:
     assert salud.detalle == "GPU no encontrada"
 
 
+def test_salud_caida_sin_detalle_raise() -> None:
+    with pytest.raises(ValueError, match="detalle"):
+        Salud(disponible=False, detalle="")
+
+
 class BackendFake:
     """Fake que cumple TTSBackend: prueba de que el contrato es satisfacible."""
 
@@ -87,7 +96,7 @@ class BackendFake:
 
 
 class SinCerrar:
-    """Solo implementa parte del protocolo: NO debe ser un TTSBackend."""
+    """Falta el miembro `cerrar`: runtime_checkable detecta miembros ausentes."""
 
     def sintetizar(self, texto: str, perfil: VoiceProfile) -> AudioResult:
         return AudioResult(datos=b"x", formato="wav")
@@ -100,7 +109,8 @@ def test_backend_fake_satisface_el_contrato() -> None:
     assert isinstance(BackendFake(), TTSBackend)
 
 
-def test_objeto_incompleto_no_es_backend() -> None:
+def test_objeto_sin_miembro_no_es_backend() -> None:
+    """isinstance detecta el miembro ausente (no valida firmas: eso es mypy)."""
     assert not isinstance(SinCerrar(), TTSBackend)
 
 

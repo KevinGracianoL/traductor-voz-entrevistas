@@ -52,10 +52,16 @@ class AudioResult:
 
 @dataclass(frozen=True)
 class Salud:
-    """Resultado de healthcheck de un backend TTS."""
+    """Resultado de healthcheck de un backend TTS.
+
+    `disponible=False` exige `detalle`: un backend caído sin explicación no
+    sirve de puerta para los gates de latencia.
+    """
 
     disponible: bool
     detalle: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "detalle", self.detalle.strip())
+        if not self.disponible and not self.detalle:
+            raise ValueError("detalle vacío: backend caído sin explicación")
