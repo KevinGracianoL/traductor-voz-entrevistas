@@ -74,20 +74,22 @@ def _calentar_whisper_y_foto(whisper: Any, audio: Path) -> float | None:
     contra la línea base aísla la VRAM de Whisper, sin mezclarla con las
     reservas perezosas que el motor haga en sus propias síntesis.
 
-    Conteo de segmentos (r5): el umbral de 50 detecta "Whisper ausente", no
+    Conteo de segmentos (r5/r6): el umbral de 50 detecta "Whisper ausente", no
     "presente pero frío" — los pesos se reservan en `__init__`, así que si
     `no_speech_threshold` corta el silencio, el delta igual pasa. 0 segmentos
-    = el decoder no corrió y la VRAM puede subestimar: AVISO (usa voz real).
+    = el decoder no corrió y la VRAM subestimaría: `raise` con la salida
+    (`--warmup-audio` con voz real), no un print que se pierde en la corrida.
     """
     import torch
 
     segmentos, _ = whisper.transcribe(str(audio), language="es")
     lista = list(segmentos)
     if not lista:
-        print(
-            "AVISO: el warm-up dio 0 segmentos (silencio cortado por no_speech): "
-            "el decoder puede no haberse ejercitado y la VRAM subestima. "
-            "Usa --warmup-audio con un WAV de voz real."
+        raise RuntimeError(
+            "el warm-up dio 0 segmentos: el decoder no se ejercitó "
+            "(no_speech cortó el silencio) y la VRAM subestimaría. Usa "
+            "--warmup-audio con un WAV de voz real; el instrumento no mide "
+            "con warm-up frío."
         )
     print(f"warm-up: {len(lista)} segmentos")
     return vram_ocupada_mib(torch.cuda)
