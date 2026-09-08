@@ -1,56 +1,38 @@
 <div align="center">
 
 # 🎙️ Traductor de Voz en Tiempo Real
-### ES ↔ EN para entrevistas de trabajo — local, privado, verificable
 
-> **Pipeline:** `audio → VAD → ASR → traducción → TTS → audio` — con texto siempre visible para detectar errores antes de responder.
+### ES ↔ EN para entrevistas de trabajo — **100 % local, privado y verificable**
+
+> `audio → VAD → ASR → traducción → TTS → audio` — el texto siempre está en pantalla, así detectas un error de traducción **antes** de responder.
 
 [![CI](https://github.com/KevinGracianoL/traductor-voz-entrevistas/actions/workflows/ci.yml/badge.svg)](https://github.com/KevinGracianoL/traductor-voz-entrevistas/actions)
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)
 ![PyTorch CUDA](https://img.shields.io/badge/PyTorch-CUDA%2013.2-EE4C2C?style=flat-square&logo=pytorch)
-![Ruff](https://img.shields.io/badge/Ruff-checked-000000?style=flat-square)
 ![mypy strict](https://img.shields.io/badge/mypy-strict-2A6DB5?style=flat-square)
 ![coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen?style=flat-square)
-![mutants 186/186](https://img.shields.io/badge/mutants-186%2F186-brightgreen?style=flat-square)
+![mutantes 357/357](https://img.shields.io/badge/mutantes-357%2F357-brightgreen?style=flat-square)
 ![License MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)
 
-**Portafolio → [KevinGracianoL](https://github.com/KevinGracianoL) · Proyecto guía [entrenamiento-dev](https://github.com/KevinGracianoL/entrenamiento-dev) · Hecho para entrevistas reales, no demos**
+**Demo en vivo → [traductor-demo.kevingraciano.dev](https://traductor-demo.kevingraciano.dev)** · **Por [Kevin Graciano](https://github.com/KevinGracianoL)**
 
-[Instalación](#-instalación) · [Uso](#️-uso) · [Arquitectura](#️-arquitectura) · [Calidad](#-calidad-5-gates-1-contrato) · [ADRs](#-decisiones-adr)
-
-</div>
-
----
-
-<div align="center">
-
-### ✨ Demo
-
-*Teleprompter ES+EN en vivo durante Zoom/Meet — [https://traductor-demo.kevingraciano.dev](https://traductor-demo.kevingraciano.dev) (feed demo) + `http://localhost:8000` (pipeline real).*
-
-> **Privacidad:** el pipeline real corre en tu laptop. El audio nunca sale de la máquina. La demo en VM es solo feed estático.
+*Un traductor pensado para entrevistas reales — no para demos. Construido con gates de calidad de producción y decisiones con evidencia (ADRs).*
 
 </div>
 
 ---
 
-## 🎯 Por qué este proyecto
+## 🎯 Qué resuelve
 
-En una entrevista en inglés, un error de traducción no es un bug — es la respuesta equivocada. Este traductor prioriza **texto verificable** sobre voz sintética indistinguible, y **latencia medida en tu hardware** sobre benchmarks de RTX 4090.
+En una entrevista en inglés, un error de traducción no es un bug — **es la respuesta equivocada**.
 
-**Para reclutadores:** cada línea es testeable, cada decisión tiene evidencia (ADRs), y `mutmut` demuestra que los tests no solo ejecutan líneas — las verifican.
+Este proyecto prioriza **texto verificable** sobre voz sintética indistinguible, y **latencia medida en tu hardware** sobre benchmarks de RTX 4090 que no se cumplen en tu laptop.
 
----
+Tres decisiones que lo separan de un "hello world" con APIs:
 
-## ✅ Estado actual
-
-| Paso | Estado | Qué entrega |
-|---|---|---|
-| **1 — Hardware** | ✅ | `torch.cuda.is_available()`, VRAM libre/total, `RealtimeSTT` `tiny` `int8` (TU117) |
-| **2 — Traducción** | ✅ | `argos-translate` `EN↔ES` offline en CPU, `ARGOS_COMPUTE_TYPE=default` |
-| **3 — Medición** | ✅ | `src/traductor/latencia/` (reloj inyectable, `p50` mediana, `p95=None` si `n<20`) |
-| **4 — Audio virtual** | ✅ | `src/traductor/audio/virtual.py` (ruta por nombre, VB-CABLE, 186/186) |
-| **5 — Teleprompter** | ✅ | `src/traductor/ui/` en `localhost:8000` + Caddy demo en `fuerzafiel` |
+1. **Privacidad real** — el audio nunca sale de la máquina. El pipeline completo corre local (CPU + GPU propia), sin nube.
+2. **Cero magia** — cada etapa es una función pura y testeada: micrófono → VAD → ASR → traducción → teleprompter.
+3. **Evidencia sobre opinión** — 10 ADRs, cada decisión con su porqué medido. El TTS elegido se rechazó con números reales, no con intuición.
 
 ---
 
@@ -67,7 +49,36 @@ flowchart LR
     TTS --> SPK[🔊 Altavoz virtual]
 ```
 
-**Presupuesto ADR-003:** techo **1.5–2 s** total. Si no cabe, se recorta calidad, nunca latencia.
+**Presupuesto de latencia (ADR-003):** techo de **1,5–2 s** total. Si no cabe, se recorta calidad — nunca latencia.
+
+---
+
+## ✅ Calidad — 5 gates, 1 contrato
+
+| Pregunta | Herramienta | Config |
+|---|---|---|
+| ¿Legible y sin bugs? | **ruff** | `select = ["E","F","B","SIM","UP","I","S"]` |
+| ¿Los tipos encajan? | **mypy --strict** | errores de tipo = CI rojo |
+| ¿Hace lo que dice? | **pytest** | `--cov-fail-under=90` |
+| ¿Qué no probé? | **coverage** | **100 %** (227 stmts, 0 sin cubrir) |
+| ¿Detectaría un bug? | **mutmut** | **357/357 mutantes eliminados**, 0 supervivientes |
+
+> `mutmut` muta tu código a propósito (cambia `<=`→`<`, `*1000`→`/1000`, borra branches…) y exige que **alguien** lo detecte. El gate CI falla si `survived > 0`. Se verificó a mano rompiendo el código y viendo el gate rechazarlo.
+>
+> **76 tests** cubren el happy path **y** los modos de fallo: locks de antivirus, escrituras truncadas, `.tmp` huérfanos, rutas Windows con backslash/apóstrofo.
+
+---
+
+## 🔥 Lo que los bugs enseñaron (y que quedó como test)
+
+Este proyecto se desarrolló con un revisor estricto a lo largo de **8 rondas de review**. Cada bug real dejó una regresión test, no un parche:
+
+- **Coexistencia CUDA 12/13 en una misma máquina.** torch 2.13 trae `cudart64_13`, pero `ctranslate2` necesita `cublas/cudart 12` → `RuntimeError: Library cublas64_12.dll is not found`. La solución (`setup_dlls.py`) copia **exactamente 3 DLLs** y registra los dirs de búsqueda vía `.pth` + `os.add_dll_directory`. Verificado en hardware real: `docs/smoke-windows.txt`.
+- **Locks del antivirus en Windows.** Sobrescribir/borrar un `.dll` recién escrito falla mientras el AV lo escanea; *renombrarlo sí funciona*. `copiar_dlls` toma un backup inmutable, reintenta con backoff y **nunca deja el venv sin DLL ni con una DLL truncada** (3 invariantes de rollback).
+- **100 % de cobertura ≠ cobertura de modos de fallo.** El bug de r5 solo aparecía con un *doble sucio* (escribe basura y luego revienta); los dobles limpios `raise`-y-ya lo dejaban pasar. Ese doble es hoy un test.
+- **Un namespace package fantasma.** `makedirs` fabricaba un `ctranslate2/` vacío que enmascaraba una instalación rota. Ahora `dir_ct2()` deriva del paquete real y falla claro.
+
+Cada uno de estos escenarios tiene su test **RED → GREEN**: se escribió el test, se vio fallar contra el código roto, y luego se arregló.
 
 ---
 
@@ -78,15 +89,15 @@ flowchart LR
 | **ASR** | `RealtimeSTT` + `faster-whisper` `int8` | TU117 sin Tensor Cores → FP16 emulado, INT8 en cores enteros |
 | **Traducción** | `argos-translate` + `ctranslate2` | Offline, CPU, gratis |
 | **Medición** | `time.perf_counter` inyectable | Testeable sin hardware |
-| **Calidad** | `ruff` `mypy --strict` `pytest` `mutmut` | 100% cov, 186/186 mutantes |
+| **UI** | `FastAPI` + teleprompter ES+EN | `localhost:8000`, deploy Caddy |
+| **Calidad** | `ruff` · `mypy --strict` · `pytest` · `mutmut` | 5 gates, CI en GitHub Actions |
 
 ---
 
 ## 💻 Requisitos
 
-- **Hardware referencia:** Ryzen 5 4600H / GTX 1650 Ti 4 GB (TU117) / 24 GB RAM — 0 ms de red
+- **Hardware de referencia:** Ryzen 5 4600H / GTX 1650 Ti 4 GB (TU117) / 24 GB RAM — 0 ms de red
 - Python 3.11+, CUDA 13.2, Windows 10/11, micrófono
-- Descartados: `fuerzafiel` VM (947 MB RAM), server Medellín i5-3230M (sin AVX2), GPU remota MX (peaje por chunk)
 
 ---
 
@@ -103,8 +114,6 @@ python setup_dlls.py
 # 3. Verificar que local == CI
 ruff check .; ruff format --check .; mypy .; pytest
 ```
-
----
 
 ## ▶️ Uso
 
@@ -123,7 +132,7 @@ import time
 # ¿Cabe en 1 s?
 cabe_en_presupuesto({"asr": 500, "traduccion": 150, "tts": 300}, 1000)  # True
 
-# Medir (tests usan reloj falso, prod usa perf_counter)
+# Medir (los tests usan reloj falso, prod usa perf_counter)
 texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_counter)
 ```
 
@@ -135,33 +144,17 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 ├── src/traductor/
 │   ├── hardware/cuda.py        # verifica GPU/VRAM
 │   ├── audio/captura.py        # mic → texto (RealtimeSTT)
-│   ├── audio/virtual.py        # ruta determinista por nombre
+│   ├── audio/virtual.py        # ruta determinista por nombre (VB-CABLE)
 │   ├── traduccion/argos.py     # EN↔ES offline
 │   └── latencia/
 │       ├── presupuesto.py      # ¿cabe? ¿quién es más lento?
 │       └── medidor.py          # reloj inyectable, p50/p95 honesto
-├── scripts/
-│   ├── verificar_hardware.py   # wrapper fino hardware
-│   └── demo_traduccion.py      # wrapper fino traducción
-├── tests/                      # 76 tests, 100% cov, mutantes en CI
-├── .github/workflows/ci.yml
-├── pyproject.toml              # ruff + mypy strict + pytest --cov-fail-under=90
-└── requirements.txt
+├── scripts/                    # wrappers finos: hardware, traducción
+├── setup_dlls.py               # CUDA 12/13 coexistiendo (Windows, locks AV)
+├── docs/                       # ADRs + evidencia smoke Windows
+├── tests/                      # 76 tests, 100 % cov, mutantes en CI
+└── .github/workflows/ci.yml    # 5 gates que fallan el PR si algo se rompe
 ```
-
----
-
-## ✅ Calidad — 5 gates, 1 contrato
-
-| Pregunta | Herramienta | Config |
-|---|---|---|
-| ¿Legible/sin bug? | **ruff** | `select = ["E","F","B","SIM","UP","I","S"]` |
-| ¿Tipos encajan? | **mypy --strict** | `ignore_missing_imports` para RealtimeSTT |
-| ¿Hace lo que digo? | **pytest** | `--cov-fail-under=90` en `pyproject.toml` |
-| ¿Qué no probé? | **coverage** | `100%` |
-| ¿Detectaría un bug? | **mutmut** | `186/186` con `pytest_add_cli_args = ["--no-cov"]` |
-
-> `mutmut` necesita `fork` → WSL. En CI (Ubuntu) el gate falla si `survived > 0`. Verificado rompiendo `<=`→`<` y `*1000`→`/1000` a mano.
 
 ---
 
@@ -171,33 +164,34 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 |---|---|---|
 | 001 | Cascada, no end-to-end | Texto verificable > latencia mínima |
 | 002 | Audio virtual a nivel SO | Funciona con cualquier Meet/Zoom sin API |
-| 003 | Techo 1.5–2 s | Recorta calidad, nunca latencia |
+| 003 | Techo 1,5–2 s | Recorta calidad, nunca latencia |
 | 004 | INT8, no FP16 | TU117 sin Tensor Cores, FP16 emulado |
 | 005 | Local, no remoto | AVX2+CUDA+0 ms gana a geografía |
 | 006 | Sobre RealtimeSTT | VAD/ASR commodity, nosotros orquestamos |
 | 007 | Teleprompter primero | Semanas vs meses, honestidad en entrevista |
 | 008 | Fallback automático | Una entrevista no es un log |
 | 009 | Dirección por fuente | Determinista, 0 ms, sin detector que falle en code-switching |
-| 010 | Chatterbox rechazado como TTS | Ver [ADR-010](docs/ADR-010-chatterbox-rechazado.md): 17.4 s warm / 3.6 GB medidos, sin co-residencia con Whisper |
+| 010 | **Chatterbox rechazado como TTS** | [ADR-010](docs/ADR-010-chatterbox-rechazado.md): 17,4 s warm / 3,6 GB **medidos** en esta GPU, sin co-residencia con Whisper |
 
 ---
 
 ## 🗺️ Roadmap
 
-- [x] **Paso 1 — Hardware** — CUDA + VRAM + mic → texto (`src/traductor/hardware/`, `audio/captura.py`)
-- [x] **Paso 2 — Traducción** — `argos` offline EN↔ES (`src/traductor/traduccion/`)
-- [x] **Paso 3 — Medición** — presupuesto + medidor honesto (`p95`, `exc.elapsed_ms`, `186/186` mutantes)
-- [x] **Paso 4 — Audio virtual** — ruta por nombre, VB-CABLE (`src/traductor/audio/virtual.py`)
-- [ ] **Paso 5 — Teleprompter** — UI en vivo + deploy micro VM (nginx + TLS) — *siguiente*
-- [ ] Fase 2 — TTS (Chatterbox rechazado, ver ADR-010)
-- [ ] Fase 3 — Conversión de voz (timbre de Kevin)
+- [x] **Paso 1 — Hardware** — CUDA + VRAM + mic → texto
+- [x] **Paso 2 — Traducción** — `argos` offline EN↔ES
+- [x] **Paso 3 — Medición** — presupuesto + medidor honesto (`p95`, `exc.elapsed_ms`)
+- [x] **Paso 4 — Audio virtual** — ruta por nombre, VB-CABLE
+- [x] **Paso 5 — Teleprompter** — UI en vivo + deploy (nginx + TLS)
+- [x] **Fase 2a — DLLs CUDA en Windows** — torch 2.13 (CUDA 13) conviviendo con ctranslate2 (CUDA 12)
+- [ ] **Fase 2b — TTS** — contratos neutrales; Chatterbox descartado (ADR-010); benchmark ASR/XTTS en roadmap
+- [ ] **Fase 3 — Conversión de voz** — timbre de Kevin
 
 ---
 
 <div align="center">
 
-**Hecho por [Kevin Graciano](https://github.com/KevinGracianoL) — aprendiendo en público, midiendo en mi hardware.**
+**Hecho por [Kevin Graciano](https://github.com/KevinGracianoL)** — aprendiendo en público, midiendo en mi propio hardware.
 
-*Cero credenciales y cero audios de entrevistas reales en el historial.*
+*Privacidad por diseño: cero audios de entrevistas reales y cero credenciales en el historial del repo.*
 
 </div>
