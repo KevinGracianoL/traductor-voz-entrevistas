@@ -17,7 +17,7 @@ Uso:
     $env:PYTHONPATH = "src"
     python scripts/medir_gates_tts.py --warmup-audio tu_voz.wav
     # + flags de sesión tras la corrida larga: --pipeline-p95 1500 --no-oom
-    #   --memoria_estable --no-artefactos --voz_reconocible_ab --endurance_90min
+    #   --memoria-estable --no-artefactos --voz-reconocible-ab --endurance-90min
 
 El CI NO lo ejecuta: requiere GPU + modelo + Whisper. La salida se pega como
 evidencia en el ADR-014.

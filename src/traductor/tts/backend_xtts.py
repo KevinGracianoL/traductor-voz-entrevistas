@@ -87,7 +87,7 @@ class BackendXtts:
             return Salud(  # pragma: no cover - solo con coqui-tts instalado
                 disponible=False, detalle="modelo no cargado: llama a sintetizar() primero"
             )
-        return Salud(disponible=True, detalle=f"XTTS-v2 listo ({MODELO_XTTS})")  # pragma: no cover
+        return Salud(disponible=True, detalle=f"XTTS-v2 listo ({MODELO_XTTS})")
 
     def cerrar(self) -> None:
         """Suelta el modelo. Idempotente.

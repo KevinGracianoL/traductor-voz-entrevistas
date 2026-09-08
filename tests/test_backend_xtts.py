@@ -38,6 +38,15 @@ def test_verificar_salud_no_carga_el_modelo() -> None:
     assert backend._tts is None
 
 
+def test_verificar_salud_con_modelo_cargado() -> None:
+    """Simulando el modelo cargado, el healthcheck dice disponible (r2 PR #16)."""
+    backend = BackendXtts()
+    backend._tts = object()  # sin el motor real: solo la rama cargada
+    salud = backend.verificar_salud()
+    assert salud.disponible is True
+    assert MODELO_XTTS in salud.detalle
+
+
 def test_sintetizar_sin_motor_error_claro() -> None:
     backend = BackendXtts()
     with pytest.raises(

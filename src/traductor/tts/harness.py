@@ -49,7 +49,7 @@ def parser_harness() -> argparse.ArgumentParser:
         ("endurance_90min", "completó 90 minutos continuos (True = PASA)"),
     ):
         parser.add_argument(
-            f"--{nombre}",
+            f"--{nombre.replace('_', '-')}",
             action=argparse.BooleanOptionalAction,
             help=ayuda,
         )
@@ -76,10 +76,19 @@ def componer_medicion(
     )
 
 
+def _bytes_a_mib(valor: float) -> float:
+    """Bytes → MiB: unidad fijada (valor/1024², no valor/1024³ — el 1000x del #15)."""
+    return valor / (1024 * 1024)
+
+
 def medir_ram_mib() -> float | None:
-    """RAM total en uso del sistema (MiB) vía psutil. None si no está instalado."""
+    """RAM total en uso del sistema (MiB) vía psutil. None si no está instalado.
+
+    Definición (ADR-014): `virtual_memory().used` es de TODA la máquina — el
+    veredicto depende de qué más esté abierto; anotar al correr (como nvidia-smi).
+    """
     try:
         import psutil
     except ImportError:
         return None
-    return float(psutil.virtual_memory().used / (1024 * 1024))  # pragma: no cover - máquina
+    return _bytes_a_mib(psutil.virtual_memory().used)  # pragma: no cover - máquina

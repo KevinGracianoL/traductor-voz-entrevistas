@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from traductor.tts.gates import cabe_en_gates
-from traductor.tts.harness import componer_medicion, medir_ram_mib, parser_harness
+from traductor.tts.harness import _bytes_a_mib, componer_medicion, medir_ram_mib, parser_harness
 
 
 def _wav(tmp_path: Path) -> Path:
@@ -68,10 +68,10 @@ def test_componer_medicion_go_completo(tmp_path: Path) -> None:
             "--pipeline-p95",
             "1500",
             "--no-oom",
-            "--memoria_estable",
+            "--memoria-estable",
             "--no-artefactos",
-            "--voz_reconocible_ab",
-            "--endurance_90min",
+            "--voz-reconocible-ab",
+            "--endurance-90min",
         ]
     )
     m = componer_medicion(300.0, 2500.0, 12000.0, args)
@@ -90,10 +90,10 @@ def test_componer_medicion_flags_negativos(tmp_path: Path) -> None:
             "--warmup-audio",
             str(_wav(tmp_path)),
             "--oom",
-            "--no-memoria_estable",
+            "--no-memoria-estable",
             "--artefactos",
-            "--no-voz_reconocible_ab",
-            "--no-endurance_90min",
+            "--no-voz-reconocible-ab",
+            "--no-endurance-90min",
         ]
     )
     m = componer_medicion(300.0, 2500.0, 12000.0, args)
@@ -111,5 +111,9 @@ def test_medir_ram_sin_psutil_devuelve_none() -> None:
         import psutil  # noqa: F401
     except ImportError:
         assert medir_ram_mib() is None
-    else:
-        assert isinstance(medir_ram_mib(), float) or medir_ram_mib() is None
+
+
+def test_bytes_a_mib_unidad() -> None:
+    """1 GiB = 1024 MiB; un /1024**3 daría ~1 y el gate de RAM pasaría siempre."""
+    assert _bytes_a_mib(1 * 1024**3) == 1024.0
+    assert _bytes_a_mib(512 * 1024**2) == 512.0

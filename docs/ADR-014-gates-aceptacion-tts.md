@@ -7,7 +7,7 @@
 
   - **TTFA caliente p95 < 400 ms.** TTFA = time to first audio. Con el contrato actual (no streaming) TTFA ≈ latencia de la primera síntesis; XTTS soporta streaming y el primer audio **no puede bloquearse esperando toda la frase**. `p95` con `n≥20` (misma honestidad que ADR-003/012).
   - **VRAM total (ASR + motor) < 3.2 GB** (3276.8 MiB). El "~1 GB" del ASR es un **supuesto a medir en la primera corrida**, no una cifra verificada.
-  - **RAM total < 18 GB.**
+  - **RAM total < 18 GB.** Definición: `psutil.virtual_memory().used` de TODA la máquina — el veredicto depende de qué más esté abierto; anotar el contexto al correr (como con `nvidia-smi`).
   - **Pipeline warm p95 < 2 s** (cierre del turno: ASR ≤300 ms + traducción ≤200 ms + primer fragmento ≤350 ms + ruteo ≤100 ms → ~1.3 s, dentro del objetivo de 1.5–2 s del ADR-003).
   - **Sin OOM.**
   - **Sin crecimiento sostenido de memoria** durante la sesión.
