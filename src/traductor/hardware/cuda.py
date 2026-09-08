@@ -29,3 +29,17 @@ def verificar_gpu() -> bool:  # pragma: no cover
     libre_gb = libre_bytes / 1024**3
     print(f"VRAM libre: {libre_gb:.2f} GB")
     return True
+
+
+def vram_ocupada_mib() -> float | None:
+    """VRAM total en uso (MiB) a nivel de driver.
+
+    Usa `mem_get_info` (total del dispositivo menos libre): incluye lo que
+    reserva CTranslate2/faster-whisper, que queda FUERA del allocator de
+    torch. None si no hay CUDA. Cierra el gate "VRAM co-residente" (ADR-014).
+    """
+    if not torch.cuda.is_available():
+        return None
+    total_bytes = torch.cuda.get_device_properties(0).total_memory
+    libre_bytes, _ = torch.cuda.mem_get_info()
+    return float((total_bytes - libre_bytes) / (1024 * 1024))
