@@ -1,0 +1,16 @@
+[
+  {
+    "ruta": "es_01.wav",
+    "idioma": "es",
+    "referencia": "el cafe esta frio"
+  },
+  {
+    "ruta": "en_01.wav",
+    "idioma": "en",
+    "referencia": "tell me about a hard bug you solved"
+  },
+  {
+    "ruta": "en_02.wav",
+    "idioma": "en"
+  }
+]

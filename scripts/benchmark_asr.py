@@ -1,50 +1,43 @@
 """Benchmark ASR bidireccional — faster-whisper vs moonshine, en la máquina objetivo.
 
-Corre sobre WAVs de referencia en `scripts/audio/` (manifest: `scripts/audio/manifesto.json`)
-y escribe la tabla comparativa por `engine|idioma`.
+Wrapper fino: carga los motores reales y usa `traductor.asr` (manifesto,
+medición, agregación). Corre sobre WAVs de `scripts/audio/` según
+`scripts/audio/manifesto.json` y escribe la tabla comparativa.
 
 Uso:
     $env:PYTHONPATH = "src"
     python scripts/benchmark_asr.py
 
-El CI NO lo ejecuta: requiere GPU + modelos + audios de referencia. Aquí se
-deja listo para correr y pegar la evidencia en el ADR-012.
+El CI NO lo ejecuta: requiere GPU + modelos + audios de referencia. La salida
+se pega como evidencia en el ADR-012.
 """
 
 from __future__ import annotations
 
-import json
-import time
-from functools import partial
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from traductor.asr.benchmark import resumen_asr, tabla_comparativa
-from traductor.asr.resultado import ResultadoAsr
-from traductor.latencia.medidor import medir_tiempo
+from traductor.asr.manifesto import Muestra, cargar_manifesto, muestras_existentes
+from traductor.asr.medicion import medir_motores
 
 RAIZ_AUDIO = Path(__file__).parent / "audio"
 MANIFESTO = RAIZ_AUDIO / "manifesto.json"
 
 
-def _faster_whisper_tiny() -> object:
-    """Modelo faster-whisper tiny int8 en CUDA, cargado una vez."""
+def _faster_whisper() -> Any:
+    """Modelo faster-whisper tiny int8 en CUDA (ya en requirements)."""
     from faster_whisper import WhisperModel
 
     return WhisperModel("tiny", device="cuda", compute_type="int8_float16")
 
 
-def _moonshine_tiny() -> object:
+def _moonshine() -> Any:
     """Modelo moonshine tiny. Import lento: no está en requirements aún."""
     import moonshine
 
     return moonshine.load_model("tiny")
-
-
-MOTORES = {
-    "faster-whisper": _faster_whisper_tiny,
-    "moonshine": _moonshine_tiny,
-}
 
 
 def _transcribir(modelo: Any, motor: str, ruta: Path, idioma: str) -> str:
@@ -64,51 +57,46 @@ def _transcribir(modelo: Any, motor: str, ruta: Path, idioma: str) -> str:
     raise ValueError(f"motor desconocido: {motor}")
 
 
-def _cargar_manifesto() -> list[dict[str, str]]:
-    if not MANIFESTO.exists():
-        print(f"Sin manifest en {MANIFESTO}: genera audios de referencia primero.")
-        return []
-    with MANIFESTO.open(encoding="utf-8") as fh:
-        datos: list[dict[str, str]] = json.load(fh)
-    return datos
-
-
-def main() -> None:
-    muestras = _cargar_manifesto()
-    if not muestras:
-        return
-
-    modelos: dict[str, object] = {}
-    for motor, cargar in MOTORES.items():
+def _cargar_modelos() -> dict[str, Any]:
+    modelos: dict[str, Any] = {}
+    for motor, cargar in (("faster-whisper", _faster_whisper), ("moonshine", _moonshine)):
         try:
             modelos[motor] = cargar()
             print(f"{motor}: modelo cargado")
         except Exception as exc:  # ImportError / modelo no disponible
             print(f"{motor}: no disponible ({exc})")
+    return modelos
 
-    resultados: list[ResultadoAsr] = []
-    for muestra in muestras:
-        ruta = RAIZ_AUDIO / muestra["ruta"]
-        idioma = muestra["idioma"]
-        referencia = muestra.get("referencia", "")
-        if not ruta.exists():
-            print(f"falta audio: {ruta}")
-            continue
-        for motor, modelo in modelos.items():
-            frase, elapsed_ms = medir_tiempo(
-                partial(_transcribir, modelo, motor, ruta, idioma),
-                clock=time.perf_counter,
-            )
-            resultados.append(
-                ResultadoAsr(
-                    engine=motor,
-                    idioma=idioma,
-                    frase=frase,
-                    elapsed_ms=elapsed_ms,
-                    referencia=referencia,
-                )
-            )
 
+def _muestras() -> list[Muestra]:
+    try:
+        muestras = cargar_manifesto(MANIFESTO)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"manifest inválido: {exc}")
+        return []
+    existentes, faltantes = muestras_existentes(muestras)
+    for nombre in faltantes:
+        print(f"falta audio: {nombre}")
+    return existentes
+
+
+def _transcribir_con(modelo: Any, motor: str) -> Callable[[Path, str], str]:
+    """Fija modelo+motor en un callable (ruta, idioma) -> texto, tipado."""
+
+    def transcribir(ruta: Path, idioma: str) -> str:
+        return _transcribir(modelo, motor, ruta, idioma)
+
+    return transcribir
+
+
+def main() -> None:
+    muestras = _muestras()
+    modelos = _cargar_modelos()
+    if not muestras or not modelos:
+        print("Sin muestras o sin motores disponibles.")
+        return
+    motores = {motor: _transcribir_con(modelo, motor) for motor, modelo in modelos.items()}
+    resultados = medir_motores(motores, muestras)
     print()
     print(tabla_comparativa(resumen_asr(resultados)))
 
