@@ -7,6 +7,13 @@ cualquier `TTSBackend` en su propio proceso.
 
 from traductor.tts.backend import TTSBackend
 from traductor.tts.enrolamiento import enrolar
+from traductor.tts.gates import (
+    GateResultado,
+    MedicionTts,
+    cabe_en_gates,
+    evaluar_gates,
+    resumen_gates,
+)
 from traductor.tts.modelos import AudioResult, Salud, VoiceProfile
 from traductor.tts.tienda import VoiceProfileStore
 from traductor.tts.tienda_json import TiendaPerfilesJson
@@ -15,13 +22,18 @@ from traductor.tts.worker import main as main_worker
 
 __all__ = [
     "AudioResult",
+    "GateResultado",
     "Job",
+    "MedicionTts",
     "Salud",
     "TTSBackend",
     "TiendaPerfilesJson",
     "VoiceProfile",
     "VoiceProfileStore",
+    "cabe_en_gates",
     "enrolar",
+    "evaluar_gates",
     "main_worker",
     "procesar_job",
+    "resumen_gates",
 ]
