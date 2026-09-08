@@ -35,3 +35,5 @@ source_paths = ["src/traductor/"]
 pytest_add_cli_args_test_selection = ["tests/"]
 pytest_add_cli_args = ["--no-cov"]
 mutate_only_covered_lines = true
+# setup_dlls.py vive en la raíz (se corre como script): copiarlo al dir mutants
+also_copy = ["setup_dlls.py"]
