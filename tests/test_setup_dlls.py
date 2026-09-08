@@ -250,6 +250,44 @@ def test_copiar_dlls_agota_reintentos_y_lanza(
     assert len(intentos) == 3
 
 
+def test_copiar_dlls_reintentos_por_defecto(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Contrato por defecto: 6 intentos con backoff de 1.0 s."""
+    import os
+
+    from setup_dlls import copiar_dlls
+
+    nvidia = tmp_path / "nvidia"
+    (nvidia / "cublas" / "bin").mkdir(parents=True)
+    (nvidia / "cublas" / "bin" / "cublas64_12.dll").write_bytes(b"origen")
+    (nvidia / "cublas" / "bin" / "cublasLt64_12.dll").write_bytes(b"origen")
+    (nvidia / "cudnn" / "bin").mkdir(parents=True)
+    (nvidia / "cuda_runtime" / "bin").mkdir(parents=True)
+    (nvidia / "cuda_runtime" / "bin" / "cudart64_12.dll").write_bytes(b"origen")
+    dest = tmp_path / "Scripts"
+    dest.mkdir()
+    ct2 = tmp_path / "ct2"
+    ct2.mkdir()
+    (dest / "cublas64_12.dll").write_bytes(b"bloqueado")
+    intentos: list[str] = []
+    duerme: list[float] = []
+
+    def bloqueado(a: str, b: str) -> None:
+        intentos.append(a)
+        raise PermissionError(a)
+
+    def spy_sleep(s: float) -> None:
+        duerme.append(s)
+
+    monkeypatch.setattr(os, "replace", bloqueado)
+    monkeypatch.setattr(time, "sleep", spy_sleep)
+    with pytest.raises(RuntimeError, match="no puedo reemplazar"):
+        copiar_dlls(str(nvidia), str(dest), str(ct2))
+    assert len(intentos) == 6
+    assert duerme == [1.0, 1.0, 1.0, 1.0, 1.0]
+
+
 def test_copiar_dlls_limpia_tmp_con_reintento(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
