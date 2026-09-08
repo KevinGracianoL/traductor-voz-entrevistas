@@ -7,6 +7,7 @@ cublas64_12. El .pth añade los dirs con add_dll_directory en cada arranque.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import sys
@@ -58,26 +59,40 @@ def copiar_dlls(
     """Ejecuta el plan contra el FS real.
 
     Sobrescribir/borrar un .dll tomado por el antivirus falla (PermissionError)
-    pero renombrarlo a .tmp sí pasa. Por eso se renombra el viejo, se copia el
-    nuevo y se borra el .tmp con reintento acotado (si el lock persiste, el
-    .tmp queda como copia inerte de nombre fijo que se reutiliza/borra en la
-    siguiente corrida). Si algo falla en el último intento, se restaura la DLL
-    vieja antes de lanzar: nunca se deja el venv sin DLL.
+    pero renombrarlo a .tmp sí pasa. El backup se toma UNA vez antes del bucle
+    y queda inmutable: en cada except se borra el parcial de copy (no se
+    sobreescribe el backup con basura). Si algo falla en el último intento, se
+    restaura el backup y se lanza error claro: nunca se deja el venv sin DLL ni
+    con una DLL truncada.
     """
     archivos = {sub: os.listdir(os.path.join(nvidia_path, sub, "bin")) for sub in SUBS}
     for src, dst_dir in plan_dlls(nvidia_path, dest, ct2_dir, archivos):
         dst = os.path.join(dst_dir, os.path.basename(src))
         tmp = dst + ".tmp"
+        if os.path.exists(dst):
+            try:
+                os.replace(dst, tmp)
+            except PermissionError as e:
+                raise RuntimeError(
+                    f"no puedo reemplazar {dst}: ¿proceso con la DLL cargada? ({e})"
+                ) from e
         for intento in range(reintentos):
             try:
-                if os.path.exists(dst):
-                    os.replace(dst, tmp)
                 shutil.copy2(src, dst)
                 break
             except PermissionError as e:
+                if os.path.exists(dst):
+                    with contextlib.suppress(PermissionError):
+                        os.remove(dst)
                 if intento == reintentos - 1:
                     if os.path.exists(tmp):
-                        os.replace(tmp, dst)
+                        try:
+                            os.replace(tmp, dst)
+                        except OSError as rest:
+                            raise RuntimeError(
+                                f"no puedo reemplazar {dst} ni restaurar la DLL vieja "
+                                f"({e}; restore: {rest})"
+                            ) from rest
                     raise RuntimeError(
                         f"no puedo reemplazar {dst}: ¿proceso con la DLL cargada? ({e})"
                     ) from e
