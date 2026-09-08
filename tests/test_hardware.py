@@ -10,21 +10,12 @@ import pytest
 from traductor.hardware.cuda import vram_ocupada_mib
 
 
-class _Props:
-    total_memory = 4 * 1024**3
-
-
 class _CudaFake:
     def __init__(self, disponible: bool) -> None:
         self._disponible = disponible
-        self.indices: list[object] = []
 
     def is_available(self) -> bool:
         return self._disponible
-
-    def get_device_properties(self, indice: int) -> object:
-        self.indices.append(indice)
-        return _Props()
 
     def mem_get_info(self) -> tuple[int, int]:
         return (1 * 1024**3, 4 * 1024**3)
@@ -36,6 +27,4 @@ def test_vram_sin_cuda_none() -> None:
 
 def test_vram_total_menos_libre_en_mib() -> None:
     """4 GiB total − 1 GiB libre = 3 GiB = 3072 MiB (no ~3, no 3*1024**2*...)."""
-    fake = _CudaFake(disponible=True)
-    assert vram_ocupada_mib(fake) == pytest.approx(3 * 1024)
-    assert fake.indices == [0]
+    assert vram_ocupada_mib(_CudaFake(disponible=True)) == pytest.approx(3 * 1024)

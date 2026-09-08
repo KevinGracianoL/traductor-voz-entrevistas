@@ -33,11 +33,9 @@ def verificar_gpu() -> bool:  # pragma: no cover
 
     print(f"GPU: {cuda.get_device_name(0)}")
 
-    total_bytes = cuda.get_device_properties(0).total_memory
+    libre_bytes, total_bytes = cuda.mem_get_info()
     total_gb = total_bytes / 1024**3
     print(f"VRAM total: {total_gb:.2f} GB")
-
-    libre_bytes, _ = cuda.mem_get_info()
     libre_gb = libre_bytes / 1024**3
     print(f"VRAM libre: {libre_gb:.2f} GB")
     return True
@@ -46,13 +44,12 @@ def verificar_gpu() -> bool:  # pragma: no cover
 def vram_ocupada_mib(cuda: Any) -> float | None:
     """VRAM total en uso (MiB) a nivel de driver, para `cuda` inyectado.
 
-    Usa `mem_get_info` (total del dispositivo menos libre): incluye lo que
-    reserva CTranslate2/faster-whisper, que queda FUERA del allocator de
-    torch. None si no hay CUDA. Cierra el gate "VRAM co-residente" (ADR-014).
-    `cuda` se inyecta para que el cálculo sea testeable sin GPU.
+    `mem_get_info` devuelve `(libre, total)` del MISMO dispositivo actual:
+    una sola llamada, sin asumir device 0 (r3 del PR #15). Incluye lo que
+    reserva CTranslate2/faster-whisper, fuera del allocator de torch. None si
+    no hay CUDA. `cuda` se inyecta para que el cálculo sea testeable sin GPU.
     """
     if not cuda.is_available():
         return None
-    total_bytes = cuda.get_device_properties(0).total_memory
-    libre_bytes, _ = cuda.mem_get_info()
+    libre_bytes, total_bytes = cuda.mem_get_info()
     return float((total_bytes - libre_bytes) / (1024 * 1024))
