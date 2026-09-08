@@ -1,0 +1,14 @@
+# ADR-014 - Gates de aceptación del motor TTS (Propuesto)
+
+- **Estado:** Propuesto (2026-09-08) — criterios escritos y harness listos (PR #15); **medición pendiente** en la máquina objetivo con un candidato concreto (ADR-011: sin motor elegido aún).
+- **Contexto:** para que ADR-011 pase de "Propuesto" a un motor concreto, hace falta un **criterio de aceptación objetivo**. Sin él, la elección del motor sería una opinión más. Las mediciones se hacen en la GPU real (GTX 1650 Ti 4 GB, presupuesto ADR-003), con Whisper co-residente — mismo criterio que ADR-010 y ADR-012.
+- **Criterios de aceptación (los dos deben pasar):**
+
+  - **TTFA caliente p95 < 400 ms** (`traductor.tts.gates`). TTFA = time to first audio. Con el contrato actual (no streaming, ADR-011) TTFA ≈ latencia de la primera síntesis; si un candidato stream, este es el primer sitio donde el contrato aprieta y se reabre ADR-011. `p95` con `n≥20` (misma honestidad que ADR-003/012: con pocas muestras p95 == max y engaña).
+  - **VRAM total (Whisper + motor) < 3.2 GB** (3276.8 MiB). En una GPU de 4 GB, con Whisper int8 (~1 GB) ya cargado, el motor debe caber sin exceder el presupuesto de co-residencia.
+
+- **Cómo se mide:** `scripts/medir_gates_tts.py` — carga el motor candidato, `warm-up`, `n≥20` síntesis calientes con reloj inyectable, `torch.cuda.memory_reserved()` con Whisper cargado, y evalúa `evaluar_gates` (reuso del medidor honesto). Un gate sin medir (`None`) **falla**: un criterio que no se puede evaluar no pasa en silencio.
+- **Consecuencias:**
+  - Un candidato que pase ambos gates se propone como decisión de ADR-011 (worker TTS concreto) con su propio PR.
+  - Un candidato que no pase se descarta con la evidencia pegada aquí (mismo patrón que ADR-010 con Chatterbox).
+  - El módulo `gates.py` queda como gate de regresión: si un futuro cambio del motor empeora TTFA o VRAM en la máquina objetivo, se detecta re-corriendo el harness.

@@ -60,12 +60,12 @@ flowchart LR
 | ¿Legible y sin bugs? | **ruff** | `select = ["E","F","B","SIM","UP","I","S"]` |
 | ¿Los tipos encajan? | **mypy --strict** | errores de tipo = CI rojo |
 | ¿Hace lo que dice? | **pytest** | `--cov-fail-under=90` |
-| ¿Qué no probé? | **coverage** | **100 %** (556 stmts, 0 sin cubrir) |
+| ¿Qué no probé? | **coverage** | **100 %** (603 stmts, 0 sin cubrir) |
 | ¿Detectaría un bug? | **mutmut** | **0 supervivientes** — el gate CI falla si `survived > 0` |
 
 > `mutmut` muta tu código a propósito (cambia `<=`→`<`, `*1000`→`/1000`, borra branches…) y exige que **alguien** lo detecte. El gate CI falla si `survived > 0`. Se verificó a mano rompiendo el código y viendo el gate rechazarlo.
 >
-> **174 tests** cubren el happy path **y** los modos de fallo: locks de antivirus, escrituras truncadas, `.tmp` huérfanos, rutas Windows con backslash/apóstrofo.
+> **189 tests** cubren el happy path **y** los modos de fallo: locks de antivirus, escrituras truncadas, `.tmp` huérfanos, rutas Windows con backslash/apóstrofo.
 
 ---
 
@@ -157,14 +157,15 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 │   │   ├── tienda.py           # VoiceProfileStore (Protocol)
 │   │   ├── tienda_json.py      # store real: un JSON por perfil (ADR-013)
 │   │   ├── enrolamiento.py     # muestras → VoiceProfile validado (ADR-013)
-│   │   └── worker.py           # worker aislado: jobs JSON-line (ADR-013)
+│   │   ├── worker.py           # worker aislado: jobs JSON-line (ADR-013)
+│   │   └── gates.py            # aceptación TTS: TTFA p95 + VRAM (ADR-014)
 │   └── latencia/
 │       ├── presupuesto.py      # ¿cabe? ¿quién es más lento?
 │       └── medidor.py          # reloj inyectable, p50/p95 honesto
 ├── scripts/                    # wrappers finos: hardware, traducción
 ├── setup_dlls.py               # CUDA 12/13 coexistiendo (Windows, locks AV)
 ├── docs/                       # ADRs + evidencia smoke Windows
-├── tests/                      # 174 tests, 100 % cov, mutantes en CI
+├── tests/                      # 189 tests, 100 % cov, mutantes en CI
 └── .github/workflows/ci.yml    # 5 gates que fallan el PR si algo se rompe
 ```
 
@@ -198,7 +199,8 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 - [x] **Fase 2b — Contratos TTS** — `VoiceProfile`/`VoiceProfileStore`/`TTSBackend` (ADR-011, Propuesto)
 - [x] **Fase 2c — Benchmark ASR** — WER + p50/p95: faster-whisper vs moonshine (ADR-012, Propuesto)
 - [x] **Fase 2d — Worker TTS + enrolamiento** — worker aislado + tienda JSON (ADR-013, Propuesto)
-- [ ] **Fase 2e — TTS** — motor real contra los contratos (candidato apache-2.0)
+- [x] **Fase 2e — Gates TTS** — TTFA caliente p95 < 400 ms + VRAM < 3.2 GB (ADR-014, Propuesto)
+- [ ] **Fase 2f — TTS** — motor real contra los contratos y los gates (candidato apache-2.0)
 - [ ] **Fase 3 — Conversión de voz** — timbre de Kevin
 
 ---
@@ -210,5 +212,6 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 *Privacidad por diseño: cero audios de entrevistas reales y cero credenciales en el historial del repo.*
 
 </div>
+
 
 
