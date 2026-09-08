@@ -57,10 +57,11 @@ def evaluar_gates(medicion: MedicionTts) -> list[GateResultado]:
             "TTFA caliente p95", ttfa < TTFA_MS_MAX, ttfa, f"< {TTFA_MS_MAX:g} ms"
         )
     vram = medicion.vram_mib
+    limite_vram = f"< {VRAM_MIB_MAX / 1024:g} GB"
     if vram is None:
-        resultado_vram = GateResultado("VRAM co-residente", False, None, "< 3.2 GB")
+        resultado_vram = GateResultado("VRAM co-residente", False, None, limite_vram)
     else:
-        resultado_vram = GateResultado("VRAM co-residente", vram < VRAM_MIB_MAX, vram, "< 3.2 GB")
+        resultado_vram = GateResultado("VRAM co-residente", vram < VRAM_MIB_MAX, vram, limite_vram)
     return [resultado_ttfa, resultado_vram]
 
 

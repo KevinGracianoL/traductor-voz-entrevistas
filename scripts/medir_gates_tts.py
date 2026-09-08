@@ -89,8 +89,12 @@ def _medir_ttfa_p95(motor: Any, n: int) -> float | None:
 def main() -> None:
     motor = _cargar_motor()
     whisper = _cargar_whisper()
+    # Orden deliberado: Whisper ya residente ANTES de medir TTFA — las síntesis
+    # corren bajo presión de VRAM real (co-residencia, ADR-014). Si se invierte
+    # el orden, el TTFA baja "gratis" y el gate miente.
     ttfa = _medir_ttfa_p95(motor, N_REPETICIONES)
     vram = _medir_vram_con_whisper(whisper)
+    del whisper, motor  # liberar DESPUÉS de la foto, no antes
     medicion = MedicionTts(ttfa_caliente_p95_ms=ttfa, vram_mib=vram)
     resultados = evaluar_gates(medicion)
     if ttfa is None:
