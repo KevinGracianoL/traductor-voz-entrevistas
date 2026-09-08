@@ -51,7 +51,7 @@ def _medir_vram_mib() -> float | None:
 
     if not torch.cuda.is_available():
         return None
-    return torch.cuda.memory_reserved() / (1024 * 1024)
+    return float(torch.cuda.memory_reserved() / (1024 * 1024))
 
 
 def main() -> None:
