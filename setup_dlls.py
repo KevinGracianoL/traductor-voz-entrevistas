@@ -43,7 +43,7 @@ def plan_dlls(
     plan: list[tuple[str, str]] = []
     for sub in SUBS:
         src = os.path.join(nvidia_path, sub, "bin")
-        for f in archivos_por_sub.get(sub, []):
+        for f in archivos_por_sub[sub]:
             if f.endswith(".dll"):
                 plan.append((os.path.join(src, f), dest))
     for f, sub in SOLO_CT2.items():
@@ -59,35 +59,49 @@ def copiar_dlls(nvidia_path: str, dest: str, ct2_dir: str) -> None:
 
 
 def escribir_keeper(site_packages: str, bins: list[str]) -> tuple[str, str]:
-    """Escribe keeper .py + .pth. Devuelve ambas rutas."""
+    """Escribe keeper .py + .pth en UTF-8 explícito (hay usernames no-ASCII)."""
     keeper = os.path.join(site_packages, "zz_nvidia_dlls.py")
-    rendered_dirs = "".join(f"    r'{b}',\n" for b in bins)
-    with open(keeper, "w", encoding="utf-8") as fh:
-        fh.write(KEEPER_TXT.format(dirs=rendered_dirs))
+    rendered_dirs = "".join(f"    {b!r},\n" for b in bins)
+    with open(keeper, "wb") as fh:
+        fh.write(KEEPER_TXT.format(dirs=rendered_dirs).encode())
     pth = os.path.join(site_packages, "zz_nvidia_dlls.pth")
-    with open(pth, "w", encoding="utf-8") as fh:
-        fh.write("import zz_nvidia_dlls\n")
+    with open(pth, "wb") as fh:
+        fh.write(b"import zz_nvidia_dlls\n")
     return keeper, pth
 
 
-def instalar(nvidia_path: str, dest: str, site_packages: str) -> tuple[str, str]:
+def dir_ct2() -> str:
+    """Dir del paquete ctranslate2 real. Falla claro si no está instalado."""
+    import ctranslate2
+
+    archivo: str | None = ctranslate2.__file__
+    if archivo is None:
+        raise RuntimeError("ctranslate2 sin __file__: instalación rota")
+    return os.path.dirname(archivo)
+
+
+def instalar(
+    nvidia_path: str, dest: str, site_packages: str, ct2_dir: str | None = None
+) -> tuple[str, str]:
     """Pipeline completo contra dirs dados (testeable con árbol falso)."""
-    ct2_dir = os.path.join(site_packages, "ctranslate2")
-    os.makedirs(ct2_dir, exist_ok=True)
-    copiar_dlls(nvidia_path, dest, ct2_dir)
-    print("DLLs copiadas a", dest, "y", ct2_dir)
-    keeper, pth = escribir_keeper(site_packages, dirs_cuda(nvidia_path, dest))
-    print("keeper+pth en", keeper, "y", pth)
-    return keeper, pth
+    destino_ct2 = ct2_dir if ct2_dir is not None else dir_ct2()
+    copiar_dlls(nvidia_path, dest, destino_ct2)
+    return escribir_keeper(site_packages, dirs_cuda(nvidia_path, dest))
 
 
-def main() -> None:
+def main(
+    nvidia_path: str | None = None,
+    dest: str | None = None,
+    site_packages: str | None = None,
+) -> None:
     import nvidia
 
-    dest = os.path.dirname(sys.executable)  # venv\Scripts (dir de la app)
+    real_nvidia = nvidia_path if nvidia_path is not None else nvidia.__path__[0]
+    real_dest = dest if dest is not None else os.path.dirname(sys.executable)
     # site-packages real (site.getsitepackages miente en virtualenv: devuelve venv\)
-    site_packages = os.path.dirname(nvidia.__path__[0])
-    instalar(nvidia.__path__[0], dest, site_packages)
+    real_sp = site_packages if site_packages is not None else os.path.dirname(nvidia.__path__[0])
+    keeper, pth = instalar(real_nvidia, real_dest, real_sp)
+    print(f"keeper+pth en {keeper} y {pth}")
 
 
 __all__ = ["dirs_cuda", "plan_dlls", "copiar_dlls", "escribir_keeper", "instalar", "main"]

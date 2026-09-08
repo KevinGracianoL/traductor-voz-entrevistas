@@ -23,7 +23,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
-addopts = "-q --cov=traductor.latencia --cov=traductor.audio.virtual --cov=traductor.traduccion --cov=traductor.ui --cov-report=term-missing --cov-fail-under=90"
+addopts = "-q --cov=traductor.latencia --cov=traductor.audio.virtual --cov=traductor.traduccion --cov=traductor.ui --cov=setup_dlls --cov-report=term-missing --cov-fail-under=90"
 
 [project]
 name = "traductor-voz-entrevistas"
@@ -31,7 +31,7 @@ version = "0.1.0"
 dependencies = []
 
 [tool.mutmut]
-source_paths = ["src/traductor/"]
+source_paths = ["src/traductor/", "setup_dlls.py"]
 pytest_add_cli_args_test_selection = ["tests/"]
 pytest_add_cli_args = ["--no-cov"]
 mutate_only_covered_lines = true
