@@ -9,7 +9,7 @@ la de co-residencia, después de las síntesis TTFA.
 
 Uso:
     $env:PYTHONPATH = "src"
-    python scripts/medir_gates_tts.py
+    python scripts/medir_gates_tts.py --warmup-audio tu_voz.wav
 
 El CI NO lo ejecuta: requiere GPU + modelo + Whisper. La salida se pega como
 evidencia en el ADR-014.
@@ -46,21 +46,6 @@ def _cargar_whisper() -> Any:
     from faster_whisper import WhisperModel
 
     return WhisperModel("tiny", device="cuda", compute_type="int8_float16")
-
-
-def _generar_wav_silencio(duracion_s: float = 1.0) -> Path:
-    """WAV mono 16-bit de silencio: basta para forzar la primera inferencia."""
-    import tempfile
-    import wave
-
-    sr = 16000
-    ruta = Path(tempfile.gettempdir()) / "traductor_whisper_warmup.wav"
-    with wave.open(str(ruta), "wb") as fh:
-        fh.setnchannels(1)
-        fh.setsampwidth(2)
-        fh.setframerate(sr)
-        fh.writeframes(b"\x00\x00" * int(sr * duracion_s))
-    return ruta
 
 
 def _calentar_whisper_y_foto(whisper: Any, audio: Path) -> float | None:
@@ -117,8 +102,9 @@ def main() -> None:
     parser.add_argument(
         "--warmup-audio",
         type=Path,
-        default=None,
-        help="WAV de voz real para el warm-up de Whisper (silencio si no se da)",
+        required=True,
+        help="WAV de voz real para el warm-up de Whisper (obligatorio: sin el "
+        "decoder ejercitado la VRAM subestima y el harness hace raise)",
     )
     args = parser.parse_args()
 
@@ -128,7 +114,7 @@ def main() -> None:
     # Orden deliberado: Whisper ya residente ANTES de medir TTFA — las síntesis
     # corren bajo presión de VRAM real (co-residencia, ADR-014). Si se invierte
     # el orden, el TTFA baja "gratis" y el gate miente.
-    warmup = args.warmup_audio if args.warmup_audio is not None else _generar_wav_silencio()
+    warmup = args.warmup_audio
     vram_tras_whisper = _calentar_whisper_y_foto(whisper, warmup)
     if vram_base is not None and vram_tras_whisper is not None:
         delta = vram_tras_whisper - vram_base
