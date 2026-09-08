@@ -1,9 +1,11 @@
 """Mide los gates de aceptación del motor TTS en la máquina objetivo (ADR-014).
 
 Carga el motor candidato (inyectado; aún sin elegir, ADR-011) Y faster-whisper
-co-residente: el ~1 GB de Whisper es lo que da sentido al umbral de VRAM.
-Mide TTFA caliente p95 con el medidor honesto (n>=20, math.ceil, None si falta)
-y la VRAM TOTAL a nivel driver (`vram_ocupada_mib`, incluye CTranslate2).
+co-residente (tiny int8; el "~1 GB" del ADR es un supuesto, la primera corrida
+lo mide). Mide TTFA caliente p95 con el medidor honesto (n>=20, math.ceil,
+None si falta) y la VRAM TOTAL a nivel driver (`vram_ocupada_mib`, incluye
+CTranslate2). La foto de Whisper se toma justo tras su warm-up (delta aislado);
+la de co-residencia, después de las síntesis TTFA.
 
 Uso:
     $env:PYTHONPATH = "src"
@@ -28,6 +30,10 @@ from traductor.tts.modelos import VoiceProfile
 PERFIL = VoiceProfile(id="benchmark", nombre="Benchmark", muestras=("ref.wav",))
 TEXTO = "hola, esto es una prueba del motor de voz"
 N_REPETICIONES = 20
+# Piso para la auto-verificación de Whisper. tiny int8 son decenas de MB de
+# pesos; el bulto del contexto CUDA ya existe en vram_base. 50 es conservador,
+# NO 500 (estimación de memoria citada sin verificar, r4).
+DELTA_WHISPER_MIN_MIB = 50.0
 
 
 def _cargar_motor() -> Any:
@@ -57,29 +63,23 @@ def _generar_wav_silencio(duracion_s: float = 1.0) -> Path:
     return ruta
 
 
-def _medir_vram_con_whisper(whisper: Any, vram_base: float | None) -> float | None:
-    """VRAM usada (MiB) con Whisper co-residente y la PRIMERA inferencia hecha.
+def _calentar_whisper_y_foto(whisper: Any) -> float | None:
+    """Calienta la PRIMERA inferencia de Whisper y devuelve la VRAM tras ella.
 
     CTranslate2 reserva workspace/KV/beam en la primera `transcribe()`, no en
     `__init__` (r1 del PR #15). `transcribe()` devuelve un generador: se drena
     con `list()` o la inferencia no ocurre y el warm-up es decorativo.
 
-    Auto-verificación del instrumento (r3): si el delta contra la línea base
-    (< 500 MiB) dice que Whisper no cargó de verdad, `raise` — "no medido no
-    pasa en silencio" (principio de gates.py) aplicado al propio harness.
+    La foto se toma INMEDIATAMENTE después del warm-up (r4): así el delta
+    contra la línea base aísla la VRAM de Whisper, sin mezclarla con las
+    reservas perezosas que el motor haga en sus propias síntesis.
     """
     import torch
 
     audio = _generar_wav_silencio()
     segmentos, _ = whisper.transcribe(str(audio), language="es")
     list(segmentos)
-    vram = vram_ocupada_mib(torch.cuda)
-    if vram_base is not None and vram is not None and vram - vram_base < 500:
-        raise RuntimeError(
-            f"Whisper no reservó VRAM (delta {vram - vram_base:.1f} MiB < 500): "
-            "el warm-up no ejercitó CT2; instrumento no fiable."
-        )
-    return vram
+    return vram_ocupada_mib(torch.cuda)
 
 
 def _medir_ttfa_p95(motor: Any, n: int) -> float | None:
@@ -104,8 +104,20 @@ def main() -> None:
     # Orden deliberado: Whisper ya residente ANTES de medir TTFA — las síntesis
     # corren bajo presión de VRAM real (co-residencia, ADR-014). Si se invierte
     # el orden, el TTFA baja "gratis" y el gate miente.
+    vram_tras_whisper = _calentar_whisper_y_foto(whisper)
+    if vram_base is not None and vram_tras_whisper is not None:
+        delta = vram_tras_whisper - vram_base
+        print(f"delta VRAM (Whisper, foto tras warm-up): {delta:.1f} MiB")
+        if delta < DELTA_WHISPER_MIN_MIB:
+            raise RuntimeError(
+                f"Whisper no reservó VRAM (delta {delta:.1f} MiB < "
+                f"{DELTA_WHISPER_MIN_MIB:g}): el warm-up no ejercitó CT2; "
+                "instrumento no fiable."
+            )
     ttfa = _medir_ttfa_p95(motor, N_REPETICIONES)
-    vram = _medir_vram_con_whisper(whisper, vram_base)
+    # Foto de co-residencia DESPUÉS de las síntesis TTFA: Whisper + motor con
+    # sus reservas reales. Es el número del gate.
+    vram = vram_ocupada_mib(torch.cuda)
     del whisper, motor  # liberar DESPUÉS de la foto, no antes
     medicion = MedicionTts(ttfa_caliente_p95_ms=ttfa, vram_mib=vram)
     resultados = evaluar_gates(medicion)
