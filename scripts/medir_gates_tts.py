@@ -72,10 +72,10 @@ def _calentar_whisper_y_foto(whisper: Any, audio: Path) -> float | None:
     lista = list(segmentos)
     if not lista:
         raise RuntimeError(
-            "el warm-up dio 0 segmentos: el decoder no se ejercitó "
-            "(no_speech cortó el silencio) y la VRAM subestimaría. Usa "
-            "--warmup-audio con un WAV de voz real; el instrumento no mide "
-            "con warm-up frío."
+            "el warm-up dio 0 segmentos: el decoder no se ejercitó y la VRAM "
+            "subestimaría. El WAV pasado no produjo segmentos (¿silencio "
+            "cortado por no_speech?). Usa --warmup-audio con un WAV de voz "
+            "real; el instrumento no mide con warm-up frío."
         )
     print(f"warm-up: {len(lista)} segmentos")
     return vram_ocupada_mib(torch.cuda)
@@ -121,8 +121,7 @@ def main() -> None:
     # Orden deliberado: Whisper ya residente ANTES de medir TTFA — las síntesis
     # corren bajo presión de VRAM real (co-residencia, ADR-014). Si se invierte
     # el orden, el TTFA baja "gratis" y el gate miente.
-    warmup = args.warmup_audio
-    vram_tras_whisper = _calentar_whisper_y_foto(whisper, warmup)
+    vram_tras_whisper = _calentar_whisper_y_foto(whisper, args.warmup_audio)
     if vram_base is not None and vram_tras_whisper is not None:
         delta = vram_tras_whisper - vram_base
         print(f"delta VRAM (Whisper, foto tras warm-up): {delta:.1f} MiB")
