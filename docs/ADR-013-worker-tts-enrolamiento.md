@@ -6,9 +6,14 @@
   2. **Aislamiento:** el motor TTS debe poder cargarse/descargarse en su **propio proceso**, sin comprometer la VRAM que ya ocupa Whisper (ADR-010 midió la co-residencia como problema real).
 - **Decisión propuesta:**
 
-  - **`TiendaPerfilesJson`** (`traductor.tts.tienda_json`): implementación real de `VoiceProfileStore` (contrato ADR-011) sobre un directorio, un `{id}.json` por perfil, UTF-8 explícito. Un archivo corrupto no se silencia: falla claro.
+  - **`TiendaPerfilesJson`** (`traductor.tts.tienda_json`): implementación real de `VoiceProfileStore` (contrato ADR-011) sobre un directorio, un `{id}.json` por perfil, UTF-8 explícito. Un archivo corrupto no se silencia: `listar` lo omite (para poder enumerar los sanos) pero `listar_errores` lo reporta con su ruta, y `obtener` falla claro indicando el archivo.
   - **`enrolar`** (`traductor.tts.enrolamiento`): `enrolar(id, nombre, muestras) -> VoiceProfile` validando que cada muestra exista y sea un archivo antes de aceptarla.
-  - **Worker aislado** (`traductor.tts.worker`): un proceso que tiene un `TTSBackend` inyectado (el motor real aún no existe, ADR-011). Protocolo: jobs JSON-line por la entrada (`texto`, `perfil_id`, `salida`) y resultados JSON-line por la salida (`ResultadoOk`/`ResultadoError`, tipos explícitos). **Un worker no muere por un job malo**: los fallos esperados (perfil ausente, síntesis que falla) vuelven como `ResultadoError`, no como excepción.
+  - **Worker aislado** (`traductor.tts.worker`): un proceso que tiene un `TTSBackend` inyectado (el motor real aún no existe, ADR-011). Protocolo: jobs JSON-line por la entrada (`texto`, `perfil_id`, `salida` relativa) y resultados JSON-line por la salida (`ResultadoOk`/`ResultadoError`, tipos explícitos).
+
+- **Frontera entre procesos (reglas de entrada, no implícitas):** el worker y la tienda no confían en quien les manda datos (r1 del PR #14, mismo principio que ADR-012):
+  - **`perfil_id` con lista blanca** `^[A-Za-z0-9_-]+$` en `TiendaPerfilesJson._ruta`: default-deny sobre conjunto cerrado. Un id como `../secreto` falla con `ValueError` antes de tocar el FS — nunca lee, escribe ni borra fuera del directorio. (Blacklist de `..` no: siempre se escapa.)
+  - **`job.salida` confinado** al `directorio_salida` del worker: `resolve()` + `is_relative_to`. Rutas absolutas o con `..` fuera se rechazan con `ResultadoError`.
+  - **El worker no muere por un job malo:** los fallos esperados —parseo, perfil ausente o inválido, tienda que falla, síntesis que falla, escritura que falla (permisos, disco lleno), salida fuera del directorio— vuelven como `ResultadoError`. La escritura (mkdir/write_bytes) está dentro del manejo de error, no fuera.
 
 - **Por qué `Resultado` (TypedDict) y no excepciones en el worker:** el worker es una frontera entre procesos; los fallos esperados se representan como valores (`ok: false, error`) para que el llamador decida, y los errores internos del motor se traducen a ese formato en la frontera. Coincide con el estilo de los contratos del ADR-011.
 - **Consecuencias:**
