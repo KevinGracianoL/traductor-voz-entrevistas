@@ -371,6 +371,40 @@ def test_copiar_dlls_restore_falla_error_claro(
         copiar_dlls(str(nvidia), str(dest), str(ct2), reintentos=3, espera=0)
 
 
+def test_copiar_dlls_tmp_viejo_no_se_promueve(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Un .tmp huérfano de otra corrida (sin b.dll) no se promueve si copy falla."""
+    import shutil
+
+    from setup_dlls import copiar_dlls
+
+    nvidia = tmp_path / "nvidia"
+    (nvidia / "cublas" / "bin").mkdir(parents=True)
+    (nvidia / "cublas" / "bin" / "cublas64_12.dll").write_bytes(b"origen")
+    (nvidia / "cublas" / "bin" / "cublasLt64_12.dll").write_bytes(b"origen")
+    (nvidia / "cudnn" / "bin").mkdir(parents=True)
+    (nvidia / "cuda_runtime" / "bin").mkdir(parents=True)
+    (nvidia / "cuda_runtime" / "bin" / "cudart64_12.dll").write_bytes(b"origen")
+    dest = tmp_path / "Scripts"
+    dest.mkdir()
+    ct2 = tmp_path / "ct2"
+    ct2.mkdir()
+    for f in ("cublas64_12.dll", "cublasLt64_12.dll", "cudart64_12.dll"):
+        (dest / f"{f}.tmp").write_bytes(b"HUERFANO")
+
+    def bloqueado(src: str, dst: str) -> None:
+        raise PermissionError(src)
+
+    monkeypatch.setattr(shutil, "copy2", bloqueado)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+    with pytest.raises(RuntimeError, match="no puedo reemplazar"):
+        copiar_dlls(str(nvidia), str(dest), str(ct2), reintentos=3, espera=0)
+    for f in ("cublas64_12.dll", "cublasLt64_12.dll", "cudart64_12.dll"):
+        assert not (dest / f).exists()
+        assert (dest / f"{f}.tmp").read_bytes() == b"HUERFANO"
+
+
 def test_copiar_dlls_reintentos_por_defecto(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -61,15 +61,17 @@ def copiar_dlls(
     Sobrescribir/borrar un .dll tomado por el antivirus falla (PermissionError)
     pero renombrarlo a .tmp sí pasa. El backup se toma UNA vez antes del bucle
     y queda inmutable: en cada except se borra el parcial de copy (no se
-    sobreescribe el backup con basura). Si algo falla en el último intento, se
-    restaura el backup y se lanza error claro: nunca se deja el venv sin DLL ni
-    con una DLL truncada.
+    sobreescribe el backup con basura). Restaurar solo toca el .tmp si ESTA
+    corrida lo creó (habia_destino): un .tmp huérfano de otra corrida no se
+    promueve a DLL. Si algo falla en el último intento, se restaura el backup y
+    se lanza error claro: nunca se deja el venv sin DLL ni con una DLL truncada.
     """
     archivos = {sub: os.listdir(os.path.join(nvidia_path, sub, "bin")) for sub in SUBS}
     for src, dst_dir in plan_dlls(nvidia_path, dest, ct2_dir, archivos):
         dst = os.path.join(dst_dir, os.path.basename(src))
         tmp = dst + ".tmp"
-        if os.path.exists(dst):
+        habia_destino = os.path.exists(dst)
+        if habia_destino:
             try:
                 os.replace(dst, tmp)
             except PermissionError as e:
@@ -85,7 +87,7 @@ def copiar_dlls(
                     with contextlib.suppress(PermissionError):
                         os.remove(dst)
                 if intento == reintentos - 1:
-                    if os.path.exists(tmp):
+                    if habia_destino and os.path.exists(tmp):
                         try:
                             os.replace(tmp, dst)
                         except OSError as rest:
