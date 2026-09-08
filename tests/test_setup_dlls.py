@@ -300,6 +300,51 @@ def test_copiar_dlls_copy_sucio_no_pierde_backup(
     assert not (dest / "cublas64_12.dll.tmp").exists()
 
 
+def test_copiar_dlls_parcial_no_borrable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """El parcial que tampoco se puede borrar no revienta el retry (Hal r3 PR14).
+
+    `os.remove` del parcial lanza PermissionError (lock del AV): el
+    `suppress(PermissionError)` lo absorbe y el flujo llega al error claro.
+    Con `suppress(None)` (mutante) el TypeError mataría el retry.
+    """
+    import os
+    import shutil
+
+    from setup_dlls import copiar_dlls
+
+    nvidia = tmp_path / "nvidia"
+    (nvidia / "cublas" / "bin").mkdir(parents=True)
+    (nvidia / "cublas" / "bin" / "cublas64_12.dll").write_bytes(b"origen")
+    (nvidia / "cublas" / "bin" / "cublasLt64_12.dll").write_bytes(b"origen")
+    (nvidia / "cudnn" / "bin").mkdir(parents=True)
+    (nvidia / "cuda_runtime" / "bin").mkdir(parents=True)
+    (nvidia / "cuda_runtime" / "bin" / "cudart64_12.dll").write_bytes(b"origen")
+    dest = tmp_path / "Scripts"
+    dest.mkdir()
+    ct2 = tmp_path / "ct2"
+    ct2.mkdir()
+    (dest / "cublas64_12.dll").write_bytes(b"VIEJA-BUENA")
+    real_remove = os.remove
+
+    def copy_sucio(src: str, dst: str) -> None:
+        if dst == str(dest / "cublas64_12.dll"):
+            with open(dst, "wb") as fh:
+                fh.write(b"TRUNCADA")
+        raise PermissionError(src)
+
+    def remove_parcial_bloqueado(path: str) -> None:
+        if path == str(dest / "cublas64_12.dll"):
+            raise PermissionError(path)
+        real_remove(path)
+
+    monkeypatch.setattr(shutil, "copy2", copy_sucio)
+    monkeypatch.setattr(os, "remove", remove_parcial_bloqueado)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+    with pytest.raises(RuntimeError, match="no puedo reemplazar"):
+        copiar_dlls(str(nvidia), str(dest), str(ct2), reintentos=3, espera=0)
+    assert (dest / "cublas64_12.dll").read_bytes() == b"VIEJA-BUENA"
+
+
 def test_copiar_dlls_backup_bloqueado_error_claro(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
