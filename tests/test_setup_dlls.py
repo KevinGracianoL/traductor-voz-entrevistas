@@ -2,6 +2,7 @@
 
 import runpy
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -112,6 +113,182 @@ def test_instalar_copia_y_registra_en_arbol_falso(tmp_path: Path) -> None:
     assert Path(keeper).parent == site_packages
     assert Path(pth).parent == site_packages
     assert repr(str(dest)) in Path(keeper).read_text(encoding="utf-8")
+
+
+def test_copiar_dlls_reemplaza_existente(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Re-ejecución: el viejo se renombra a .tmp, se copia el nuevo y se limpia."""
+    import os
+
+    from setup_dlls import copiar_dlls
+
+    nvidia = tmp_path / "nvidia"
+    (nvidia / "cublas" / "bin").mkdir(parents=True)
+    (nvidia / "cublas" / "bin" / "cublas64_12.dll").write_bytes(b"origen")
+    (nvidia / "cublas" / "bin" / "cublasLt64_12.dll").write_bytes(b"origen")
+    (nvidia / "cudnn" / "bin").mkdir(parents=True)
+    (nvidia / "cuda_runtime" / "bin").mkdir(parents=True)
+    (nvidia / "cuda_runtime" / "bin" / "cudart64_12.dll").write_bytes(b"origen")
+    dest = tmp_path / "Scripts"
+    dest.mkdir()
+    ct2 = tmp_path / "ct2"
+    ct2.mkdir()
+    (dest / "cublas64_12.dll").write_bytes(b"viejo")
+    renames: list[tuple[str, str]] = []
+    real_replace = os.replace
+
+    def spy_replace(a: str, b: str) -> None:
+        renames.append((a, b))
+        real_replace(a, b)
+
+    monkeypatch.setattr(os, "replace", spy_replace)
+    copiar_dlls(str(nvidia), str(dest), str(ct2))
+    assert (dest / "cublas64_12.dll").read_bytes() == b"origen"
+    assert (str(dest / "cublas64_12.dll"), str(dest / "cublas64_12.dll.tmp")) in renames
+    assert not (dest / "cublas64_12.dll.tmp").exists()
+    assert (ct2 / "cublas64_12.dll").exists()
+
+
+def test_copiar_dlls_sin_destino_previo_no_renombra(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+
+    from setup_dlls import copiar_dlls
+
+    nvidia = tmp_path / "nvidia"
+    (nvidia / "cublas" / "bin").mkdir(parents=True)
+    (nvidia / "cublas" / "bin" / "cublas64_12.dll").write_bytes(b"origen")
+    (nvidia / "cublas" / "bin" / "cublasLt64_12.dll").write_bytes(b"origen")
+    (nvidia / "cudnn" / "bin").mkdir(parents=True)
+    (nvidia / "cuda_runtime" / "bin").mkdir(parents=True)
+    (nvidia / "cuda_runtime" / "bin" / "cudart64_12.dll").write_bytes(b"origen")
+    dest = tmp_path / "Scripts"
+    dest.mkdir()
+    ct2 = tmp_path / "ct2"
+    ct2.mkdir()
+    renames: list[tuple[str, str]] = []
+    real_replace = os.replace
+
+    def spy_replace(a: str, b: str) -> None:
+        renames.append((a, b))
+        real_replace(a, b)
+
+    monkeypatch.setattr(os, "replace", spy_replace)
+    copiar_dlls(str(nvidia), str(dest), str(ct2))
+    assert renames == []
+    assert (dest / "cublas64_12.dll").read_bytes() == b"origen"
+
+
+def test_copiar_dlls_reintenta_y_acierta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Lock transitorio (AV): el rename falla 2 veces y luego pasa, con backoff."""
+    import os
+
+    from setup_dlls import copiar_dlls
+
+    nvidia = tmp_path / "nvidia"
+    (nvidia / "cublas" / "bin").mkdir(parents=True)
+    (nvidia / "cublas" / "bin" / "cublas64_12.dll").write_bytes(b"origen")
+    (nvidia / "cublas" / "bin" / "cublasLt64_12.dll").write_bytes(b"origen")
+    (nvidia / "cudnn" / "bin").mkdir(parents=True)
+    (nvidia / "cuda_runtime" / "bin").mkdir(parents=True)
+    (nvidia / "cuda_runtime" / "bin" / "cudart64_12.dll").write_bytes(b"origen")
+    dest = tmp_path / "Scripts"
+    dest.mkdir()
+    ct2 = tmp_path / "ct2"
+    ct2.mkdir()
+    (dest / "cublas64_12.dll").write_bytes(b"bloqueado")
+    real_replace = os.replace
+    intentos: list[str] = []
+    duerme: list[float] = []
+
+    def replace_que_se_desbloquea(a: str, b: str) -> None:
+        intentos.append(a)
+        if len(intentos) <= 2:
+            raise PermissionError(a)
+        real_replace(a, b)
+
+    def spy_sleep(s: float) -> None:
+        duerme.append(s)
+
+    monkeypatch.setattr(os, "replace", replace_que_se_desbloquea)
+    monkeypatch.setattr(time, "sleep", spy_sleep)
+    copiar_dlls(str(nvidia), str(dest), str(ct2), reintentos=5, espera=0)
+    assert (dest / "cublas64_12.dll").read_bytes() == b"origen"
+    assert len(intentos) == 3
+    assert duerme == [0.0, 0.0]
+
+
+def test_copiar_dlls_agota_reintentos_y_lanza(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+
+    from setup_dlls import copiar_dlls
+
+    nvidia = tmp_path / "nvidia"
+    (nvidia / "cublas" / "bin").mkdir(parents=True)
+    (nvidia / "cublas" / "bin" / "cublas64_12.dll").write_bytes(b"origen")
+    (nvidia / "cublas" / "bin" / "cublasLt64_12.dll").write_bytes(b"origen")
+    (nvidia / "cudnn" / "bin").mkdir(parents=True)
+    (nvidia / "cuda_runtime" / "bin").mkdir(parents=True)
+    (nvidia / "cuda_runtime" / "bin" / "cudart64_12.dll").write_bytes(b"origen")
+    dest = tmp_path / "Scripts"
+    dest.mkdir()
+    ct2 = tmp_path / "ct2"
+    ct2.mkdir()
+    (dest / "cublas64_12.dll").write_bytes(b"bloqueado")
+    intentos: list[str] = []
+
+    def bloqueado(a: str, b: str) -> None:
+        intentos.append(a)
+        raise PermissionError(a)
+
+    monkeypatch.setattr(os, "replace", bloqueado)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+    with pytest.raises(RuntimeError, match="no puedo reemplazar"):
+        copiar_dlls(str(nvidia), str(dest), str(ct2), reintentos=3, espera=0)
+    assert len(intentos) == 3
+
+
+def test_copiar_dlls_limpia_tmp_con_reintento(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """El .tmp viejo (todavía escaneado) se borra con reintento, no se abandona."""
+    import os
+
+    from setup_dlls import copiar_dlls
+
+    nvidia = tmp_path / "nvidia"
+    (nvidia / "cublas" / "bin").mkdir(parents=True)
+    (nvidia / "cublas" / "bin" / "cublas64_12.dll").write_bytes(b"origen")
+    (nvidia / "cublas" / "bin" / "cublasLt64_12.dll").write_bytes(b"origen")
+    (nvidia / "cudnn" / "bin").mkdir(parents=True)
+    (nvidia / "cuda_runtime" / "bin").mkdir(parents=True)
+    (nvidia / "cuda_runtime" / "bin" / "cudart64_12.dll").write_bytes(b"origen")
+    dest = tmp_path / "Scripts"
+    dest.mkdir()
+    ct2 = tmp_path / "ct2"
+    ct2.mkdir()
+    (dest / "cublas64_12.dll").write_bytes(b"viejo")
+    real_remove = os.remove
+    duerme: list[float] = []
+    intentos: list[str] = []
+
+    def remove_que_se_desbloquea(path: str) -> None:
+        intentos.append(path)
+        if len(intentos) <= 2:
+            raise PermissionError(path)
+        real_remove(path)
+
+    def spy_sleep(s: float) -> None:
+        duerme.append(s)
+
+    monkeypatch.setattr(os, "remove", remove_que_se_desbloquea)
+    monkeypatch.setattr(time, "sleep", spy_sleep)
+    copiar_dlls(str(nvidia), str(dest), str(ct2), reintentos=5, espera=0)
+    assert not (dest / "cublas64_12.dll.tmp").exists()
+    assert len(intentos) == 3
+    assert duerme == [0.0, 0.0]
 
 
 def test_dir_ct2_deriva_del_paquete_real(monkeypatch: pytest.MonkeyPatch) -> None:

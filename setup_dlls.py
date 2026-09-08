@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import time
 
 SUBS = ("cublas", "cudnn", "cuda_runtime")
 
@@ -51,11 +52,39 @@ def plan_dlls(
     return plan
 
 
-def copiar_dlls(nvidia_path: str, dest: str, ct2_dir: str) -> None:
-    """Ejecuta el plan contra el FS real."""
+def copiar_dlls(
+    nvidia_path: str, dest: str, ct2_dir: str, reintentos: int = 6, espera: float = 1.0
+) -> None:
+    """Ejecuta el plan contra el FS real.
+
+    Sobrescribir/borrar un .dll recién escrito falla (PermissionError) mientras
+    el antivirus lo escanea, pero renombrarlo sí pasa. Por eso se renombra el
+    viejo a .tmp, se copia uno nuevo, y se borra el .tmp con reintento acotado.
+    Si el lock persiste, error claro en vez de excepción críptica.
+    """
     archivos = {sub: os.listdir(os.path.join(nvidia_path, sub, "bin")) for sub in SUBS}
-    for src, dst in plan_dlls(nvidia_path, dest, ct2_dir, archivos):
-        shutil.copy2(src, dst)
+    for src, dst_dir in plan_dlls(nvidia_path, dest, ct2_dir, archivos):
+        dst = os.path.join(dst_dir, os.path.basename(src))
+        tmp = dst + ".tmp"
+        for intento in range(reintentos):
+            try:
+                if os.path.exists(dst):
+                    os.replace(dst, tmp)
+                shutil.copy2(src, dst)
+                break
+            except PermissionError as e:
+                if intento == reintentos - 1:
+                    raise RuntimeError(
+                        f"no puedo reemplazar {dst}: ¿proceso con la DLL cargada? ({e})"
+                    ) from e
+                time.sleep(espera)
+        if os.path.exists(tmp):
+            for _ in range(reintentos):
+                try:
+                    os.remove(tmp)
+                    break
+                except PermissionError:
+                    time.sleep(espera)
 
 
 def escribir_keeper(site_packages: str, bins: list[str]) -> tuple[str, str]:
