@@ -116,7 +116,7 @@ def test_instalar_copia_y_registra_en_arbol_falso(tmp_path: Path) -> None:
 
 
 def test_copiar_dlls_reemplaza_existente(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Re-ejecución: el viejo se renombra a .tmp, se copia el nuevo y se limpia."""
+    """Re-ejecución: copia a .tmp + os.replace; un solo replace y sin .tmp sobrante."""
     import os
 
     from setup_dlls import copiar_dlls
@@ -137,20 +137,20 @@ def test_copiar_dlls_reemplaza_existente(tmp_path: Path, monkeypatch: pytest.Mon
     real_replace = os.replace
 
     def spy_replace(a: str, b: str) -> None:
-        renames.append((a, b))
+        if a == str(dest / "cublas64_12.dll"):
+            renames.append((a, b))
         real_replace(a, b)
 
     monkeypatch.setattr(os, "replace", spy_replace)
     copiar_dlls(str(nvidia), str(dest), str(ct2))
     assert (dest / "cublas64_12.dll").read_bytes() == b"origen"
-    assert (str(dest / "cublas64_12.dll"), str(dest / "cublas64_12.dll.tmp")) in renames
+    assert renames == [(str(dest / "cublas64_12.dll"), str(dest / "cublas64_12.dll.tmp"))]
     assert not (dest / "cublas64_12.dll.tmp").exists()
     assert (ct2 / "cublas64_12.dll").exists()
 
 
-def test_copiar_dlls_sin_destino_previo_no_renombra(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_copiar_dlls_sin_destino_previo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Primera corrida: sin viejo no hay rename; copia directa al destino."""
     import os
 
     from setup_dlls import copiar_dlls
@@ -170,17 +170,19 @@ def test_copiar_dlls_sin_destino_previo_no_renombra(
     real_replace = os.replace
 
     def spy_replace(a: str, b: str) -> None:
-        renames.append((a, b))
+        if a == str(dest / "cublas64_12.dll"):
+            renames.append((a, b))
         real_replace(a, b)
 
     monkeypatch.setattr(os, "replace", spy_replace)
     copiar_dlls(str(nvidia), str(dest), str(ct2))
-    assert renames == []
     assert (dest / "cublas64_12.dll").read_bytes() == b"origen"
+    assert renames == []
+    assert not (dest / "cublas64_12.dll.tmp").exists()
 
 
 def test_copiar_dlls_reintenta_y_acierta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Lock transitorio (AV): el rename falla 2 veces y luego pasa, con backoff."""
+    """Lock transitorio (AV): replace falla 2 veces y luego pasa, con backoff."""
     import os
 
     from setup_dlls import copiar_dlls
@@ -202,9 +204,10 @@ def test_copiar_dlls_reintenta_y_acierta(tmp_path: Path, monkeypatch: pytest.Mon
     duerme: list[float] = []
 
     def replace_que_se_desbloquea(a: str, b: str) -> None:
-        intentos.append(a)
-        if len(intentos) <= 2:
-            raise PermissionError(a)
+        if a == str(dest / "cublas64_12.dll"):
+            intentos.append(a)
+            if len(intentos) <= 2:
+                raise PermissionError(a)
         real_replace(a, b)
 
     def spy_sleep(s: float) -> None:
@@ -218,9 +221,10 @@ def test_copiar_dlls_reintenta_y_acierta(tmp_path: Path, monkeypatch: pytest.Mon
     assert duerme == [0.0, 0.0]
 
 
-def test_copiar_dlls_agota_reintentos_y_lanza(
+def test_copiar_dlls_agota_reintentos_y_conserva_vieja(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Lock permanente: error claro y la DLL vieja queda intacta (no .tmp huérfano)."""
     import os
 
     from setup_dlls import copiar_dlls
@@ -236,7 +240,7 @@ def test_copiar_dlls_agota_reintentos_y_lanza(
     dest.mkdir()
     ct2 = tmp_path / "ct2"
     ct2.mkdir()
-    (dest / "cublas64_12.dll").write_bytes(b"bloqueado")
+    (dest / "cublas64_12.dll").write_bytes(b"VIEJA-PERO-FUNCIONA")
     intentos: list[str] = []
 
     def bloqueado(a: str, b: str) -> None:
@@ -247,6 +251,7 @@ def test_copiar_dlls_agota_reintentos_y_lanza(
     monkeypatch.setattr(time, "sleep", lambda _: None)
     with pytest.raises(RuntimeError, match="no puedo reemplazar"):
         copiar_dlls(str(nvidia), str(dest), str(ct2), reintentos=3, espera=0)
+    assert (dest / "cublas64_12.dll").read_bytes() == b"VIEJA-PERO-FUNCIONA"
     assert len(intentos) == 3
 
 
@@ -309,13 +314,14 @@ def test_copiar_dlls_limpia_tmp_con_reintento(
     ct2.mkdir()
     (dest / "cublas64_12.dll").write_bytes(b"viejo")
     real_remove = os.remove
-    duerme: list[float] = []
     intentos: list[str] = []
+    duerme: list[float] = []
 
     def remove_que_se_desbloquea(path: str) -> None:
-        intentos.append(path)
-        if len(intentos) <= 2:
-            raise PermissionError(path)
+        if path == str(dest / "cublas64_12.dll.tmp"):
+            intentos.append(path)
+            if len(intentos) <= 2:
+                raise PermissionError(path)
         real_remove(path)
 
     def spy_sleep(s: float) -> None:
@@ -327,6 +333,38 @@ def test_copiar_dlls_limpia_tmp_con_reintento(
     assert not (dest / "cublas64_12.dll.tmp").exists()
     assert len(intentos) == 3
     assert duerme == [0.0, 0.0]
+
+
+def test_copiar_dlls_si_copy_falla_conserva_vieja(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """El error de copy nunca reemplaza: la vieja sigue ahí (escenario de Hal)."""
+    import shutil
+
+    from setup_dlls import copiar_dlls
+
+    nvidia = tmp_path / "nvidia"
+    (nvidia / "cublas" / "bin").mkdir(parents=True)
+    (nvidia / "cublas" / "bin" / "cublas64_12.dll").write_bytes(b"origen")
+    (nvidia / "cublas" / "bin" / "cublasLt64_12.dll").write_bytes(b"origen")
+    (nvidia / "cudnn" / "bin").mkdir(parents=True)
+    (nvidia / "cuda_runtime" / "bin").mkdir(parents=True)
+    (nvidia / "cuda_runtime" / "bin" / "cudart64_12.dll").write_bytes(b"origen")
+    dest = tmp_path / "Scripts"
+    dest.mkdir()
+    ct2 = tmp_path / "ct2"
+    ct2.mkdir()
+    (dest / "cublas64_12.dll").write_bytes(b"VIEJA-PERO-FUNCIONA")
+
+    def copy_falla(src: str, dst: str) -> None:
+        raise PermissionError(src)
+
+    monkeypatch.setattr(shutil, "copy2", copy_falla)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+    with pytest.raises(RuntimeError, match="no puedo reemplazar"):
+        copiar_dlls(str(nvidia), str(dest), str(ct2), reintentos=3, espera=0)
+    assert (dest / "cublas64_12.dll").read_bytes() == b"VIEJA-PERO-FUNCIONA"
+    assert not (dest / "cublas64_12.dll.tmp").exists()
 
 
 def test_dir_ct2_deriva_del_paquete_real(monkeypatch: pytest.MonkeyPatch) -> None:

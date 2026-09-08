@@ -57,10 +57,12 @@ def copiar_dlls(
 ) -> None:
     """Ejecuta el plan contra el FS real.
 
-    Sobrescribir/borrar un .dll recién escrito falla (PermissionError) mientras
-    el antivirus lo escanea, pero renombrarlo sí pasa. Por eso se renombra el
-    viejo a .tmp, se copia uno nuevo, y se borra el .tmp con reintento acotado.
-    Si el lock persiste, error claro en vez de excepción críptica.
+    Sobrescribir/borrar un .dll tomado por el antivirus falla (PermissionError)
+    pero renombrarlo a .tmp sí pasa. Por eso se renombra el viejo, se copia el
+    nuevo y se borra el .tmp con reintento acotado (si el lock persiste, el
+    .tmp queda como copia inerte de nombre fijo que se reutiliza/borra en la
+    siguiente corrida). Si algo falla en el último intento, se restaura la DLL
+    vieja antes de lanzar: nunca se deja el venv sin DLL.
     """
     archivos = {sub: os.listdir(os.path.join(nvidia_path, sub, "bin")) for sub in SUBS}
     for src, dst_dir in plan_dlls(nvidia_path, dest, ct2_dir, archivos):
@@ -74,6 +76,8 @@ def copiar_dlls(
                 break
             except PermissionError as e:
                 if intento == reintentos - 1:
+                    if os.path.exists(tmp):
+                        os.replace(tmp, dst)
                     raise RuntimeError(
                         f"no puedo reemplazar {dst}: ¿proceso con la DLL cargada? ({e})"
                     ) from e
