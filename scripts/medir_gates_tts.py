@@ -17,6 +17,7 @@ evidencia en el ADR-014.
 
 from __future__ import annotations
 
+import argparse
 import time
 from functools import partial
 from pathlib import Path
@@ -93,15 +94,21 @@ def _medir_ttfa_p95(motor: Any, n: int) -> float | None:
     return resumen_estadisticas(registro)["ttfa"]["p95"]
 
 
-def main() -> None:
-    import argparse
+def _wav_existente(ruta: str) -> Path:
+    """Validación de argparse: falla antes de tocar la GPU (r8)."""
+    p = Path(ruta)
+    if not p.is_file():
+        raise argparse.ArgumentTypeError(f"el WAV de warm-up no existe: {ruta}")
+    return p
 
+
+def main() -> None:
     import torch
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--warmup-audio",
-        type=Path,
+        type=_wav_existente,
         required=True,
         help="WAV de voz real para el warm-up de Whisper (obligatorio: sin el "
         "decoder ejercitado la VRAM subestima y el harness hace raise)",
