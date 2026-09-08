@@ -63,7 +63,7 @@ def _generar_wav_silencio(duracion_s: float = 1.0) -> Path:
     return ruta
 
 
-def _calentar_whisper_y_foto(whisper: Any) -> float | None:
+def _calentar_whisper_y_foto(whisper: Any, audio: Path) -> float | None:
     """Calienta la PRIMERA inferencia de Whisper y devuelve la VRAM tras ella.
 
     CTranslate2 reserva workspace/KV/beam en la primera `transcribe()`, no en
@@ -73,12 +73,23 @@ def _calentar_whisper_y_foto(whisper: Any) -> float | None:
     La foto se toma INMEDIATAMENTE después del warm-up (r4): así el delta
     contra la línea base aísla la VRAM de Whisper, sin mezclarla con las
     reservas perezosas que el motor haga en sus propias síntesis.
+
+    Conteo de segmentos (r5): el umbral de 50 detecta "Whisper ausente", no
+    "presente pero frío" — los pesos se reservan en `__init__`, así que si
+    `no_speech_threshold` corta el silencio, el delta igual pasa. 0 segmentos
+    = el decoder no corrió y la VRAM puede subestimar: AVISO (usa voz real).
     """
     import torch
 
-    audio = _generar_wav_silencio()
     segmentos, _ = whisper.transcribe(str(audio), language="es")
-    list(segmentos)
+    lista = list(segmentos)
+    if not lista:
+        print(
+            "AVISO: el warm-up dio 0 segmentos (silencio cortado por no_speech): "
+            "el decoder puede no haberse ejercitado y la VRAM subestima. "
+            "Usa --warmup-audio con un WAV de voz real."
+        )
+    print(f"warm-up: {len(lista)} segmentos")
     return vram_ocupada_mib(torch.cuda)
 
 
@@ -96,7 +107,18 @@ def _medir_ttfa_p95(motor: Any, n: int) -> float | None:
 
 
 def main() -> None:
+    import argparse
+
     import torch
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--warmup-audio",
+        type=Path,
+        default=None,
+        help="WAV de voz real para el warm-up de Whisper (silencio si no se da)",
+    )
+    args = parser.parse_args()
 
     motor = _cargar_motor()
     vram_base = vram_ocupada_mib(torch.cuda)  # motor residente, Whisper aún no
@@ -104,7 +126,8 @@ def main() -> None:
     # Orden deliberado: Whisper ya residente ANTES de medir TTFA — las síntesis
     # corren bajo presión de VRAM real (co-residencia, ADR-014). Si se invierte
     # el orden, el TTFA baja "gratis" y el gate miente.
-    vram_tras_whisper = _calentar_whisper_y_foto(whisper)
+    warmup = args.warmup_audio if args.warmup_audio is not None else _generar_wav_silencio()
+    vram_tras_whisper = _calentar_whisper_y_foto(whisper, warmup)
     if vram_base is not None and vram_tras_whisper is not None:
         delta = vram_tras_whisper - vram_base
         print(f"delta VRAM (Whisper, foto tras warm-up): {delta:.1f} MiB")
