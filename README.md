@@ -143,7 +143,7 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 ├── scripts/
 │   ├── verificar_hardware.py   # wrapper fino hardware
 │   └── demo_traduccion.py      # wrapper fino traducción
-├── tests/                      # 55 tests, 100% cov, mutantes en CI
+├── tests/                      # 76 tests, 100% cov, mutantes en CI
 ├── .github/workflows/ci.yml
 ├── pyproject.toml              # ruff + mypy strict + pytest --cov-fail-under=90
 └── requirements.txt

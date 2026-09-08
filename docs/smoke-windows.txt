@@ -1,0 +1,51 @@
+Smoke de Windows en la maquina objetivo (venv del proyecto).
+Corrido contra el commit final del PR (setup_dlls.py).
+
+Fecha: 2026-09-08  |  OS: Windows  |  Python: venv\Scripts\python.exe (3.11.9)
+
+--- Re-ejecucion consecutiva 5/5 de setup_dlls.py (el fallo original era la 2.ª corrida) ---
+
+PS> python setup_dlls.py
+keeper+pth en C:\Users\Kevin\Documents\Proyecto-traductor\venv\Lib\site-packages\zz_nvidia_dlls.py y C:\Users\Kevin\Documents\Proyecto-traductor\venv\Lib\site-packages\zz_nvidia_dlls.pth
+PS> python setup_dlls.py
+keeper+pth en C:\Users\Kevin\Documents\Proyecto-traductor\venv\Lib\site-packages\zz_nvidia_dlls.py y C:\Users\Kevin\Documents\Proyecto-traductor\venv\Lib\site-packages\zz_nvidia_dlls.pth
+PS> python setup_dlls.py
+keeper+pth en C:\Users\Kevin\Documents\Proyecto-traductor\venv\Lib\site-packages\zz_nvidia_dlls.py y C:\Users\Kevin\Documents\Proyecto-traductor\venv\Lib\site-packages\zz_nvidia_dlls.pth
+PS> python setup_dlls.py
+keeper+pth en C:\Users\Kevin\Documents\Proyecto-traductor\venv\Lib\site-packages\zz_nvidia_dlls.py y C:\Users\Kevin\Documents\Proyecto-traductor\venv\Lib\site-packages\zz_nvidia_dlls.pth
+PS> python setup_dlls.py
+keeper+pth en C:\Users\Kevin\Documents\Proyecto-traductor\venv\Lib\site-packages\zz_nvidia_dlls.py y C:\Users\Kevin\Documents\Proyecto-traductor\venv\Lib\site-packages\zz_nvidia_dlls.pth
+
+--- Stack completo tras instalar (torch + ctranslate2 + cudnn + faster-whisper + re-import) ---
+
+PS> python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available()); print('cudnn', torch.backends.cudnn.version()); import ctranslate2; print('ctranslate2', ctranslate2.__version__); import nvidia.cudnn; print('nvidia.cudnn OK')"
+torch 2.13.0+cu132 cuda True
+cudnn 92000
+ctranslate2 4.8.1
+nvidia.cudnn OK
+PS> python -c "from faster_whisper import WhisperModel; WhisperModel('tiny', device='cuda', compute_type='int8_float16'); print('whisper tiny OK en cuda')"
+whisper tiny OK en cuda
+PS> python -c "import torch; print('re-import torch OK', torch.cuda.is_available())"
+re-import torch OK True
+
+--- Modos de fallo de copiar_dlls reproducidos en la maquina objetivo (tests) ---
+
+r5 (copy escribe basura y revienta):  b.dll = VIEJA-BUENA | b.dll.tmp = no
+r6 (tmp huerfano sin b.dll):          b.dll AUSENTE       (no se promueve)
+
+--- Alcance / que NO cubre este smoke ---
+
+Este smoke ejerce el camino feliz en hardware real: re-ejecucion con destino
+poblado bajo lock del AV y co-existencia torch-CUDA-13 + ctranslate2-cublas-12
+sin envenenar la resolucion (WinError 127). Lo que NO detecta (lo cubren los
+tests parametrizados con dobles, no el smoke):
+
+- Escapado del keeper con rutas Windows raras (backslash final, apostrofo,
+  usernames no-ASCII): la ruta real de esta maquina compila incluso con el
+  codigo roto de r2/r3.
+- Modos de fallo "sucios": copy que escribe basura y revienta (r5) y .tmp
+  huerfano promovido (r6) — este smoke no induce locks permanentes ni
+  escrituras truncadas a proposito.
+
+No borrar los tests parametrizados argumentando "ya tenemos smoke": son
+evidencias complementarias.
