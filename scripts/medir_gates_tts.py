@@ -38,8 +38,15 @@ DELTA_WHISPER_MIN_MIB = 50.0
 
 
 def _cargar_motor() -> Any:
-    """Carga el motor candidato. Cambiar cuando ADR-011 elija uno."""
-    raise NotImplementedError("sin motor elegido (ADR-011): inyectar el candidato aquí")
+    """Carga el candidato primario (ADR-011): XTTS-v2 vía fork coqui-tts.
+
+    Requiere coqui-tts instalado (venv propio del TTS) y el modelo descargado.
+    Si la prueba rechaza XTTS, se cambia aquí por el candidato B
+    (Supertonic 3 CPU + OpenVoice V2).
+    """
+    from traductor.tts.backend_xtts import BackendXtts
+
+    return BackendXtts(idioma_salida="en")
 
 
 def _cargar_whisper() -> Any:
