@@ -6,6 +6,7 @@ PUEDE emitir un "go" con los flags de sesión completos (r1 del PR #16,
 bloqueante: solo sabía decir no-go).
 """
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -105,12 +106,10 @@ def test_componer_medicion_flags_negativos(tmp_path: Path) -> None:
     assert cabe_en_gates(m) is False
 
 
-def test_medir_ram_sin_psutil_devuelve_none() -> None:
-    """CI no instala psutil: el instrumento reporta sin medir (None → FALLA)."""
-    try:
-        import psutil  # noqa: F401
-    except ImportError:
-        assert medir_ram_mib() is None
+def test_medir_ram_sin_psutil_devuelve_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """psutil ausente (FORZADO, no depende de la máquina): None → FALLA (r3)."""
+    monkeypatch.setitem(sys.modules, "psutil", None)
+    assert medir_ram_mib() is None
 
 
 def test_bytes_a_mib_unidad() -> None:
