@@ -2,7 +2,7 @@
 
 # 🎙️ Traductor de Voz en Tiempo Real
 
-### ES ↔ EN para entrevistas de trabajo — **100 % local, privado y verificable**
+### ES ↔ EN para entrevistas de trabajo — **100 % local, privado y medido en mi propio hardware**
 
 > `audio → VAD → ASR → traducción → TTS → audio` — el texto siempre está en pantalla, así detectas un error de traducción **antes** de responder.
 
@@ -12,13 +12,32 @@
 ![mypy strict](https://img.shields.io/badge/mypy-strict-2A6DB5?style=flat-square)
 ![coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen?style=flat-square)
 ![mutantes 0 supervivientes](https://img.shields.io/badge/mutantes-0%20supervivientes-brightgreen?style=flat-square)
+![256 tests](https://img.shields.io/badge/tests-256-2A6DB5?style=flat-square)
+![16 ADRs](https://img.shields.io/badge/decisiones-16%20ADRs-2A6DB5?style=flat-square)
 ![License MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)
 
 **Demo en vivo → [traductor-demo.kevingraciano.dev](https://traductor-demo.kevingraciano.dev)** · **Por [Kevin Graciano](https://github.com/KevinGracianoL)**
 
-*Un traductor pensado para entrevistas reales — no para demos. Construido con gates de calidad de producción y decisiones con evidencia (ADRs).*
+*Un traductor pensado para entrevistas reales — no para demos. Cada decisión tiene su ADR, cada ADR tiene sus números, y los números se tomaron en la máquina que va a sostener la entrevista.*
 
 </div>
+
+---
+
+## 🏆 El veredicto (y cómo se ganó)
+
+Después de **tres rondas de medición en hardware real** —y de que las dos primeras métricas que definí resultaran estar mal especificadas—, el motor elegido pasó el go/no-go con evidencia atribuida al 100 %:
+
+| Gate | Medido | Límite | Veredicto |
+|---|---|---|---|
+| **Pipeline end-to-end** (audio → primer sample audible en VB-CABLE, una corrida encadenada) | **peor caso 1469.3 ms** (rango 1237.0–1469.3, 4 corridas) | < 2000 ms | ✅ **PASA** (margen 531 ms) |
+| TTFA primer chunk (presupuesto **derivado**: 2000 − ASR − traducción − ruteo) | 723–755 ms < 767–826 ms | derivado | ✅ PASA |
+| VRAM co-residente (XTTS + Whisper) | 2906.9–2946.9 MiB | < 3276.8 | ✅ PASA |
+| RAM total (contexto anotado) | 13.0–13.9 GB | < 18 GB | ✅ PASA |
+| Tasa de fallo (disponibilidad) | **5 % (1 de 20 corridas)** — la etapa de traducción murió por una descarga on-demand de spacy | 0 % | ⚠️ Declarada aparte → precarga bloqueante del flujo |
+| A/B de voz (tu oído + evidencia objetiva) | timbre, ritmo 96–150 wpm, palabras técnicas claras | firma humana | ✅ Firmado |
+
+**¿Por qué importa?** El techo de 1,5–2 s del ADR-003 **no se inventó ni se copió de un benchmark**: se midió la cadena completa *en esta GPU de 4 GB*, con el ASR co-residente y el micrófono virtual real. La historia completa de las dos métricas mal definidas que detecté yo mismo, corregí y convertí en reglas, vive en [ADR-014](docs/ADR-014-gates-aceptacion-tts.md) — cinco capas de evidencia, ninguna borrada.
 
 ---
 
@@ -28,28 +47,49 @@ En una entrevista en inglés, un error de traducción no es un bug — **es la r
 
 Este proyecto prioriza **texto verificable** sobre voz sintética indistinguible, y **latencia medida en tu hardware** sobre benchmarks de RTX 4090 que no se cumplen en tu laptop.
 
-Tres decisiones que lo separan de un "hello world" con APIs:
-
-1. **Privacidad real** — el audio nunca sale de la máquina. El pipeline completo corre local (CPU + GPU propia), sin nube.
-2. **Cero magia** — cada etapa es una función pura y testeada: micrófono → VAD → ASR → traducción → teleprompter.
-3. **Evidencia sobre opinión** — 10 ADRs, cada decisión con su porqué medido. El TTS elegido se rechazó con números reales, no con intuición.
+1. **Privacidad real** — el audio nunca sale de la máquina. Todo corre local (CPU + GPU propia), sin nube, sin APIs.
+2. **Cero magia** — cada etapa es una función pura y testeada: micrófono → VAD → ASR → traducción → teleprompter → voz.
+3. **Evidencia sobre opinión** — 16 ADRs, cada decisión con su porqué medido. El motor de voz se rechazó **dos veces** con números antes de aceptarse con números.
 
 ---
 
 ## 🏗️ Arquitectura
 
+Dos flujos explícitos (ADR-015) con workers persistentes, colas de tamaño 1, cancelación y degradación automática sin reiniciar la llamada:
+
 ```mermaid
 flowchart LR
-    M1[🎤 Micrófono] --> VAD
-    M2[🔊 Audio virtual] --> VAD
-    VAD --> ASR[Whisper int8<br/>400-600 ms]
-    ASR --> TR[argos CPU<br/>~150 ms]
-    TR --> TP[📺 Teleprompter<br/>ES+EN]
-    TR --> TTS[TTS ?]
-    TTS --> SPK[🔊 Altavoz virtual]
+    subgraph OUT["outgoing_es_to_en (hablar)"]
+        M1[🎤 Micrófono] --> VAD[VAD]
+        VAD --> ASR[ASR español<br/>faster-whisper int8]
+        ASR --> TR[Argos ES→EN]
+        TR --> TP[📺 Teleprompter ES+EN]
+        TR --> TTS[XTTS-v2<br/>tu voz en inglés]
+        TTS --> CABLE[🔌 VB-CABLE]
+        CABLE --> MEET[Meet/Zoom]
+    end
+    subgraph IN["incoming_en_to_es (escuchar)"]
+        REM[🔊 Audio remoto] --> ASREN[ASR inglés]
+        ASREN --> TR2[Argos EN→ES]
+        TR2 --> SUB[📝 Subtítulos locales]
+    end
 ```
 
-**Presupuesto de latencia (ADR-003):** techo de **1,5–2 s** total. Si no cabe, se recorta calidad — nunca latencia.
+**Escalera de degradación (sin reiniciar la entrevista):** voz clonada + subtítulos → voz genérica + subtítulos → solo subtítulos. Y antes de que un audio defectuoso salga al micrófono virtual: **validación ASR-de-retorno** (palabras añadidas/omitidas/repetidas, clipping, silencios anómalos) — nunca se reproduce audio sospechoso solo para mantener la clonación.
+
+---
+
+## 🧪 Cómo se midió (lo que nadie copia de un README)
+
+El go/no-go del motor no fue una tabla en un doc: fue **un harness con auto-verificación** (`scripts/medir_gates_tts.py`) que se corrigió a sí mismo cinco veces. Cada corrección quedó como **regla escrita** en el ADR-014:
+
+1. **El gate no se declara, se deriva** — `presupuesto TTFA = 2000 ms − (ASR + traducción + ruteo medidos)`. El `< 400 ms` literal era un sub-presupuesto inventado; hoy es un cálculo en `gates.py`, no una constante.
+2. **El guard debe fallar ante el error conocido** — el primer guard exigía haber medido el *drenado* (la duración del chunk, no la latencia); su test canonizó el bug. El guard corregido se ancla a una **referencia independiente** (el loopback físico del CABLE): un guard cuyo umbral se deriva de la misma definición que valida solo puede confirmarla.
+3. **Un número por debajo de la resolución del aparato no es una medición rápida — es una medición que no ocurrió.**
+4. **El estadístico se fija antes de medir** — y el peor caso se reporta cuando el n no alcanza para p95.
+5. **La latencia se atribuye al 100 %** — `RegistroEtapas` marca cada frontera (entrada → ASR → traducción → TTS → entrega → audible) con cierre exacto por iteración; un residuo sin atribuir hace `raise`, no un print.
+
+**Instrumentos clave:** reloj inyectable para todo (`p95` con `n≥20`, `math.ceil`, nada de `n<20` reportado como p95) · detección del primer sample audible por **loopback** (escribo a CABLE Input y leo CABLE Output) con guard de resolución · **ventanas derivadas del VAD real**, nunca seleccionadas por su latencia.
 
 ---
 
@@ -60,23 +100,26 @@ flowchart LR
 | ¿Legible y sin bugs? | **ruff** | `select = ["E","F","B","SIM","UP","I","S"]` |
 | ¿Los tipos encajan? | **mypy --strict** | errores de tipo = CI rojo |
 | ¿Hace lo que dice? | **pytest** | `--cov-fail-under=90` |
-| ¿Qué no probé? | **coverage** | **100 %** (743 stmts, 0 sin cubrir) |
-| ¿Detectaría un bug? | **mutmut** | **0 supervivientes** — el gate CI falla si `survived > 0` |
+| ¿Qué no probé? | **coverage** | **100 %** (799 stmts, 0 sin cubrir) |
+| ¿Detectaría un bug? | **mutmut** | **0 supervivientes** (1486 mutantes) — el gate CI falla si `survived > 0` |
 
-> `mutmut` muta tu código a propósito (cambia `<=`→`<`, `*1000`→`/1000`, borra branches…) y exige que **alguien** lo detecte. El gate CI falla si `survived > 0`. Se verificó a mano rompiendo el código y viendo el gate rechazarlo.
+> `mutmut` muta tu código a propósito (cambia `<=`→`<`, `*1000`→`/1000`, borra branches…) y exige que **alguien** lo detecte. Se verificó a mano rompiendo el código y viendo el gate rechazarlo — y varias veces el gate encontró mutantes *equivalentes* que hubo que eliminar por reestructura, no por pragma.
 >
-> **235 tests** cubren el happy path **y** los modos de fallo: locks de antivirus, escrituras truncadas, `.tmp` huérfanos, rutas Windows con backslash/apóstrofo.
+> **256 tests** cubren el happy path **y** los modos de fallo: locks de antivirus, escrituras truncadas, `.tmp` huérfanos, mutantes que se contaminan entre sí por un WAV residual, rutas Windows con backslash/apóstrofo.
 
 ---
 
 ## 🔥 Lo que los bugs enseñaron (y que quedó como test)
 
-Este proyecto se desarrolló con un revisor estricto a lo largo de **8 rondas de review**. Cada bug real dejó una regresión test, no un parche:
+Este proyecto se desarrolló con un revisor estricto a lo largo de **muchas rondas de review**. Cada bug real dejó una regresión test, no un parche:
 
 - **Coexistencia CUDA 12/13 en una misma máquina.** torch 2.13 trae `cudart64_13`, pero `ctranslate2` necesita `cublas/cudart 12` → `RuntimeError: Library cublas64_12.dll is not found`. La solución (`setup_dlls.py`) copia **exactamente 3 DLLs** y registra los dirs de búsqueda vía `.pth` + `os.add_dll_directory`. Verificado en hardware real: `docs/smoke-windows.txt`.
 - **Locks del antivirus en Windows.** Sobrescribir/borrar un `.dll` recién escrito falla mientras el AV lo escanea; *renombrarlo sí funciona*. `copiar_dlls` toma un backup inmutable, reintenta con backoff y **nunca deja el venv sin DLL ni con una DLL truncada** (3 invariantes de rollback).
 - **100 % de cobertura ≠ cobertura de modos de fallo.** El bug de r5 solo aparecía con un *doble sucio* (escribe basura y luego revienta); los dobles limpios `raise`-y-ya lo dejaban pasar. Ese doble es hoy un test.
 - **Un namespace package fantasma.** `makedirs` fabricaba un `ctranslate2/` vacío que enmascaraba una instalación rota. Ahora `dir_ct2()` deriva del paquete real y falla claro.
+- **Un guard que blindaba el bug que debía atrapar.** El primer guard del ruteo exigía haber medido el drenado completo del chunk (1003.5 ms para 1 s de audio = la duración, no la latencia) y su test canonizó el error: 50 ms — el orden del valor correcto — se marcaba como "instrumento roto". La regla quedó escrita: *el guard se ancla a una referencia independiente de la definición que valida*.
+- **El estadístico cambió justo cuando los números empeoraron.** El p50 apareció cuando el p95 hubiera sido más alto; desde afuera es indistinguible de elegir el estadístico por su resultado. Hoy se reporta el peor caso medido con su n declarado.
+- **`ARGOS_COMPUTE_TYPE` sin "default" produce basura** en argos es→en ("mainstream" en bucle), y **argos cachea texto idéntico** (0.0 ms): el harness exige salida correcta antes de medir y mide frases distintas, como los turnos reales.
 
 Cada uno de estos escenarios tiene su test **RED → GREEN**: se escribió el test, se vio fallar contra el código roto, y luego se arregló.
 
@@ -86,18 +129,22 @@ Cada uno de estos escenarios tiene su test **RED → GREEN**: se escribió el te
 
 | Capa | Tech | Nota |
 |---|---|---|
-| **ASR** | `RealtimeSTT` + `faster-whisper` `int8` | TU117 sin Tensor Cores → FP16 emulado, INT8 en cores enteros |
-| **Traducción** | `argos-translate` + `ctranslate2` | Offline, CPU, gratis |
-| **Medición** | `time.perf_counter` inyectable | Testeable sin hardware |
+| **ASR** | `faster-whisper` `int8` | TU117 sin Tensor Cores → FP16 emulado, INT8 en cores enteros |
+| **Traducción** | `argos-translate` + `ctranslate2` | Offline, CPU, gratis; `ARGOS_COMPUTE_TYPE=default` obligatorio |
+| **TTS** | **XTTS-v2** (fork `coqui-tts`) | Tu voz en inglés, streaming `inference_stream`, perfil pre-enrolado |
+| **Salida de audio** | VB-CABLE | Micrófono virtual para Meet/Zoom, ruta por nombre |
+| **Medición** | `time.perf_counter` inyectable + `RegistroEtapas` | Atribución al 100 %, p95 honesto (n≥20) |
 | **UI** | `FastAPI` + teleprompter ES+EN | `localhost:8000`, deploy Caddy |
 | **Calidad** | `ruff` · `mypy --strict` · `pytest` · `mutmut` | 5 gates, CI en GitHub Actions |
+
+**Licencias declaradas (una por una):** código MIT · pesos XTTS-v2 **Coqui Public Model License** (uso personal no comercial — el proyecto declara la restricción, no la silencia) · OpenVoice V2 MIT · Supertonic 3 OpenRAIL-M. *CosyVoice 3 (Apache-2.0) queda anotado como candidato futuro para quitar el techo no-comercial.*
 
 ---
 
 ## 💻 Requisitos
 
 - **Hardware de referencia:** Ryzen 5 4600H / GTX 1650 Ti 4 GB (TU117) / 24 GB RAM — 0 ms de red
-- Python 3.11+, CUDA 13.2, Windows 10/11, micrófono
+- Python 3.11+, CUDA 13.2, Windows 10/11, micrófono, [VB-CABLE](https://vb-audio.com/Cable/) (driver gratuito)
 
 ---
 
@@ -123,6 +170,13 @@ python scripts/verificar_hardware.py  # → CUDA: True | GTX 1650 Ti | VRAM 3.2/
 python scripts/demo_traduccion.py     # → "Tell me about a hard bug..." ↔ "Háblame de un bug..."
 ```
 
+**Re-medir el go/no-go del motor en tu hardware** (el harness del ADR-014, con auto-verificación incluida):
+
+```powershell
+$env:PYTHONPATH = "src"
+python scripts/medir_gates_tts.py --motor xtts --warmup-audio tu_voz.wav --referencia tu_voz.wav
+```
+
 ```python
 from traductor.latencia.presupuesto import cabe_en_presupuesto
 from traductor.latencia.medidor import medir_tiempo
@@ -145,28 +199,26 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 │   ├── hardware/cuda.py        # verifica GPU/VRAM
 │   ├── audio/captura.py        # mic → texto (RealtimeSTT)
 │   ├── audio/virtual.py        # ruta determinista por nombre (VB-CABLE)
-│   ├── traduccion/argos.py     # EN↔ES offline
-│   ├── asr/                    # benchmark ASR (ADR-012, Propuesto)
-│   │   ├── wer.py              # WER puro + normalización (minúsculas, sin punt.)
-│   │   ├── manifesto.py        # manifest JSON validado (rutas, idioma, ref)
-│   │   ├── medicion.py         # loop motor×muestra con reloj inyectable
-│   │   └── benchmark.py        # agregación p50/p95 + wer_n + tabla
-│   ├── tts/                    # contratos neutrales (ADR-011, Propuesto)
+│   ├── traduccion/argos.py     # EN↔ES offline (ARGOS_COMPUTE_TYPE fijado)
+│   ├── asr/                    # benchmark ASR bidireccional (ADR-012)
+│   │   └── ...                 # WER puro, manifest, medición, agregación
+│   ├── tts/                    # contratos neutrales + motor elegido (ADR-011/014)
 │   │   ├── modelos.py          # VoiceProfile, AudioResult, Salud
 │   │   ├── backend.py          # TTSBackend (Protocol)
-│   │   ├── tienda.py           # VoiceProfileStore (Protocol)
 │   │   ├── tienda_json.py      # store real: un JSON por perfil (ADR-013)
 │   │   ├── enrolamiento.py     # muestras → VoiceProfile validado (ADR-013)
 │   │   ├── worker.py           # worker aislado: jobs JSON-line (ADR-013)
-│   │   ├── gates.py            # go/no-go: 9 gates del motor (ADR-014)
-│   │   └── backend_xtts.py     # XTTS-v2 vía fork coqui-tts (ADR-011)
+│   │   ├── gates.py            # go/no-go: presupuesto TTFA DERIVADO (ADR-014)
+│   │   ├── backend_xtts.py     # XTTS-v2 vía fork coqui-tts (motor elegido)
+│   │   ├── backend_b.py        # candidato B (Supertonic+OpenVoice): rechazado, evidencia conservada
+│   │   └── harness.py          # parser + RegistroEtapas + guards de instrumento
 │   └── latencia/
 │       ├── presupuesto.py      # ¿cabe? ¿quién es más lento?
-│       └── medidor.py          # reloj inyectable, p50/p95 honesto
-├── scripts/                    # wrappers finos: hardware, traducción
+│       └── medidor.py          # reloj inyectable, p50/p95 honesto (n≥20)
+├── scripts/                    # hardware, traducción, harness de gates
 ├── setup_dlls.py               # CUDA 12/13 coexistiendo (Windows, locks AV)
-├── docs/                       # ADRs + evidencia smoke Windows
-├── tests/                      # 235 tests, 100 % cov, mutantes en CI
+├── docs/                       # 16 ADRs con evidencia medida
+├── tests/                      # 256 tests, 100 % cov, mutantes en CI
 └── .github/workflows/ci.yml    # 5 gates que fallan el PR si algo se rompe
 ```
 
@@ -186,29 +238,25 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 | 008 | Fallback automático | Una entrevista no es un log |
 | 009 | Dirección por fuente | Determinista, 0 ms, sin detector que falle en code-switching |
 | 010 | **Chatterbox rechazado como TTS** | [ADR-010](docs/ADR-010-chatterbox-rechazado.md): 17,4 s warm / 3,6 GB **medidos** en esta GPU, sin co-residencia con Whisper |
-| 011 | **XTTS-v2 primario (fork coqui-tts)** | [ADR-011](docs/ADR-011-contratos-neutrales-tts.md): CPML declarado (uso personal no comercial); Supertonic+OpenVoice V2 como B; Pocket descartado |
+| 011 | **Motor elegido: XTTS-v2** | [ADR-011](docs/ADR-011-contratos-neutrales-tts.md): aceptado por los gates medidos; CPML declarado (uso personal); Supertonic+OpenVoice como B (rechazado); Pocket descartado |
 | 012 | **Benchmark ASR bidireccional** | [ADR-012](docs/ADR-012-benchmark-asr.md): Moonshine Small CPU vs faster-whisper Small GPU; WER normalizado + p50/p95 |
 | 013 | **Worker TTS aislado + enrolamiento** | [ADR-013](docs/ADR-013-worker-tts-enrolamiento.md): jobs JSON-line, frontera de entrada, tienda local |
-| 014 | **Gates de aceptación del motor** | [ADR-014](docs/ADR-014-gates-aceptacion-tts.md): TTFA derivado de etapas medidas (2000 ms − ASR − traducción − ruteo), VRAM<3,2 GB, RAM<18 GB, sin OOM/artefactos, endurance 90 min |
+| 014 | **Gates de aceptación del motor** | [ADR-014](docs/ADR-014-gates-aceptacion-tts.md): **cinco capas de corrección de instrumento** + presupuesto TTFA derivado; pipeline end-to-end 1469.3 ms (peor caso) < 2000 ms |
 | 015 | **Arquitectura por flujos y escalera** | [ADR-015](docs/ADR-015-arquitectura-flujos-escalera.md): outgoing/incoming, colas de tamaño 1, validación de artefactos, 4 niveles |
+| 019 | **Gates de sesión y endurance** | [ADR-019](docs/ADR-019-endurance-sesion.md): 90 min continuos, sin OOM, memoria estable, artefactos, A/B firmado por el usuario — la aprobación final |
 
 ---
 
 ## 🗺️ Roadmap
 
-- [x] **Paso 1 — Hardware** — CUDA + VRAM + mic → texto
-- [x] **Paso 2 — Traducción** — `argos` offline EN↔ES
-- [x] **Paso 3 — Medición** — presupuesto + medidor honesto (`p95`, `exc.elapsed_ms`)
-- [x] **Paso 4 — Audio virtual** — ruta por nombre, VB-CABLE
-- [x] **Paso 5 — Teleprompter** — UI en vivo + deploy (nginx + TLS)
-- [x] **Fase 2a — DLLs CUDA en Windows** — torch 2.13 (CUDA 13) conviviendo con ctranslate2 (CUDA 12)
-- [x] **Fase 2b — Contratos TTS** — `VoiceProfile`/`VoiceProfileStore`/`TTSBackend` (ADR-011, Propuesto)
-- [x] **Fase 2c — Benchmark ASR** — WER + p50/p95: faster-whisper vs moonshine (ADR-012, Propuesto)
-- [x] **Fase 2d — Worker TTS + enrolamiento** — worker aislado + tienda JSON (ADR-013, Propuesto)
-- [x] **Fase 2e — Gates TTS** — 9 gates del go/no-go: TTFA, VRAM, RAM, pipeline, OOM, memoria, artefactos, A/B, endurance (ADR-014, Propuesto)
-- [x] **Fase 2f — Go/no-go del motor TTS** — **XTTS-v2 ACEPTADO por los gates medidos** del [ADR-014](docs/ADR-014-gates-aceptacion-tts.md): pipeline end-to-end **peor caso 1469.3 ms < 2000 ms** (rango 1237.0-1469.3 en 4 corridas con segmentos VAD completos, margen 531 ms), 100 % atribuido por fronteras; aprobación final condicionada a los gates de sesión (ADR-019). Candidato B (Supertonic 3 + OpenVoice V2) **rechazado** por TTFA arquitectural (7885.8 ms)
-- [x] **Fase 2g — Motor TTS elegido** — XTTS-v2 aceptado por los gates medidos (ADR-014, Fase 2f); la aprobación FINAL queda condicionada a los gates de sesión del [ADR-019](docs/ADR-019-endurance-sesion.md) (OOM, memoria, artefactos, A/B, endurance 90 min)
-- [ ] **Fase 3 — Conversión de voz** — timbre de Kevin (el motor ya está elegido, Fase 2g; el timbre se firma en el A/B de sesión del ADR-019)
+- [x] **Pasos 1–5** — hardware, traducción, medición, audio virtual, teleprompter
+- [x] **Fases 2a–2e** — DLLs CUDA, contratos TTS, benchmark ASR, worker + enrolamiento, gates
+- [x] **Fase 2f — Go/no-go del motor** — **XTTS-v2 aceptado por los gates medidos** (pipeline peor caso 1469.3 ms < 2000 ms, margen 531 ms; candidato B rechazado por TTFA arquitectural 7885.8 ms) — evidencia en [ADR-014](docs/ADR-014-gates-aceptacion-tts.md)
+- [x] **Fase 2g — Motor elegido** — XTTS-v2; aprobación final condicionada al [ADR-019](docs/ADR-019-endurance-sesion.md)
+- [ ] **Fase 3 — El flujo `outgoing_es_to_en`** — mic → VAD → ASR es → Argos → teleprompter → XTTS → VB-CABLE, con la escalera de degradación (ADR-015)
+- [ ] **Fase 4 — Endurance 90 min** — la corrida larga del ADR-019: fugas de memoria y respuestas atrasadas solo aparecen ahí
+- [ ] **Fase 5 — EN→ES con clon remoto opcional** — subtítulos primero; el clon del entrevistador solo si las muestras pasan los controles
+- [ ] **Candidato futuro — CosyVoice 3** (Apache-2.0) — medido con el mismo harness para quitar el techo no-comercial de los pesos de XTTS
 
 ---
 
@@ -219,12 +267,3 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 *Privacidad por diseño: cero audios de entrevistas reales y cero credenciales en el historial del repo.*
 
 </div>
-
-
-
-
-
-
-
-
-
