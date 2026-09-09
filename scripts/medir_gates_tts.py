@@ -215,13 +215,39 @@ def _detectar_cable() -> str | None:
     return None
 
 
+def _dispositivo_cable(pa: Any) -> int:
+    """Índice del CABLE Input de 2 canales (el estándar); fallback al primero."""
+    for i in range(pa.get_device_count()):
+        info = pa.get_device_info_by_index(i)
+        nombre = str(info["name"] or "")
+        if "CABLE Input" in nombre and info["maxOutputChannels"] == 2:
+            return i
+    for i in range(pa.get_device_count()):
+        info = pa.get_device_info_by_index(i)
+        nombre = str(info["name"] or "")
+        if "CABLE Input" in nombre:
+            return i
+    raise RuntimeError("dispositivo CABLE Input no encontrado")
+
+
+def _mono24k_a_cable48k(pcm16_mono: bytes) -> bytes:
+    """Mono 24 kHz int16 -> estéreo 48 kHz int16 para el CABLE (lo que el flujo hace)."""
+    import numpy as np
+
+    mono = np.frombuffer(pcm16_mono, dtype=np.int16).astype(np.float32) / 32767.0
+    pcm48 = np.repeat(mono, 2)  # 24 kHz -> 48 kHz (el cable es nativo a 48 kHz)
+    stereo = np.repeat(pcm48, 2)  # mono -> estéreo
+    return bytes((np.clip(stereo, -1.0, 1.0) * 32767).astype(np.int16).tobytes())
+
+
 def _medir_ruteo_p95(n: int, cable: str | None) -> float | None:
     """Ruteo a VB-CABLE p95: el chunk se considera rutado cuando el dispositivo
     lo CONSUMIÓ (drenado), no cuando el buffer lo acepta.
 
     Auto-verificación obligatoria (patrón delta VRAM de Whisper): si el p95
-    sale por debajo del piso físico (frames/sample_rate), la escritura solo
-    fue aceptada -> raise. Sin cable instalado devuelve None (FALLA por regla).
+    sale por debajo del piso físico (frames/sample_rate del chunk de 1 s), la
+    escritura solo fue aceptada -> raise. Sin cable instalado devuelve None
+    (FALLA por regla).
     """
     if cable is None:
         print("Ruteo: VB-CABLE NO instalado -> gate sin medir (FALLA por regla)")
@@ -231,26 +257,24 @@ def _medir_ruteo_p95(n: int, cable: str | None) -> float | None:
 
     from traductor.tts.harness import verificar_piso_ruteo
 
-    FRAMES_BLOQUE = 4800  # 0.2 s a 24 kHz: cabe en el buffer del dispositivo
+    RATE_CABLE = 48000
+    FRAMES_BLOQUE = 9600  # 0.2 s a 48 kHz: cabe en el buffer del dispositivo
     pa = pyaudio.PyAudio()
     try:
-        indice = next(
-            i
-            for i in range(pa.get_device_count())
-            if "CABLE" in (pa.get_device_info_by_index(i)["name"] or "")
-        )
         stream = pa.open(
             format=pyaudio.paInt16,
-            channels=1,
-            rate=SR_FLUJO,
+            channels=2,
+            rate=RATE_CABLE,
             output=True,
-            output_device_index=indice,
+            output_device_index=_dispositivo_cable(pa),
             frames_per_buffer=FRAMES_BLOQUE,
         )
         try:
-            tono = (np.sin(np.arange(SR_FLUJO) * 0.05) * 1000).astype(np.int16).tobytes()
+            tono_mono = (np.sin(np.arange(SR_FLUJO) * 0.05) * 1000).astype(np.int16).tobytes()
+            tono_cable = _mono24k_a_cable48k(tono_mono)  # 1 s de audio
             bloques = [
-                tono[i : i + FRAMES_BLOQUE * 2] for i in range(0, len(tono), FRAMES_BLOQUE * 2)
+                tono_cable[i : i + FRAMES_BLOQUE * 4]
+                for i in range(0, len(tono_cable), FRAMES_BLOQUE * 4)
             ]
 
             def rutear_y_drenar() -> object:
@@ -355,22 +379,18 @@ def _medir_pipeline_p95(
 
     pa: Any = None
     stream: Any = None
-    FRAMES_BLOQUE = 4800
+    RATE_CABLE = 48000
+    FRAMES_BLOQUE = 9600
     if cable is not None:
         import pyaudio
 
         pa = pyaudio.PyAudio()
-        indice = next(
-            i
-            for i in range(pa.get_device_count())
-            if "CABLE" in (pa.get_device_info_by_index(i)["name"] or "")
-        )
         stream = pa.open(
             format=pyaudio.paInt16,
-            channels=1,
-            rate=SR_FLUJO,
+            channels=2,
+            rate=RATE_CABLE,
             output=True,
-            output_device_index=indice,
+            output_device_index=_dispositivo_cable(pa),
             frames_per_buffer=FRAMES_BLOQUE,
         )
     try:
@@ -384,9 +404,9 @@ def _medir_pipeline_p95(
             else:
                 chunk = motor.sintetizar(texto_en, perfil)
             if stream is not None:
-                pcm = _chunk_a_pcm16(chunk)
-                for i in range(0, len(pcm), FRAMES_BLOQUE * 2):
-                    stream.write(pcm[i : i + FRAMES_BLOQUE * 2])
+                pcm = _mono24k_a_cable48k(_chunk_a_pcm16(chunk))
+                for i in range(0, len(pcm), FRAMES_BLOQUE * 4):
+                    stream.write(pcm[i : i + FRAMES_BLOQUE * 4])
                     while stream.get_write_available() < FRAMES_BLOQUE:
                         time.sleep(0.005)
             return chunk

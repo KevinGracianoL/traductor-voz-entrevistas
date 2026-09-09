@@ -84,3 +84,25 @@ Cada etapa debe estar MEDIDA en el hardware (n≥20, p95, reloj inyectable del h
 - `ARGOS_COMPUTE_TYPE` sin "default" hace que argos es→en produzca basura ("mainstream" en bucle); el wrapper `traductor.traduccion.argos` ya lo fija — el harness exige salida correcta (sanity) antes de medir la etapa.
 - Argos cachea el mismo texto (0.0 ms): medir con frases distintas, como los turnos reales.
 - torchaudio/torchcodec necesita las DLL compartidas de FFmpeg en `PATH` (build BtbN, mismo requisito que la evidencia XTTS).
+
+## Evidencia final — XTTS-v2 RECHAZADO por el pipeline end-to-end medido (2026-09-09, VB-CABLE instalado)
+
+**Entorno:** Ryzen 5 4600H / GTX 1650 Ti 4 GB / Windows / VB-CABLE instalado. Motor: XTTS-v2 (fork coqui-tts 0.27.5) con el perfil de Kevin, streaming `inference_stream` caliente, faster-whisper tiny int8 co-residente, Argos ES→EN (el wrapper fija `ARGOS_COMPUTE_TYPE=default`), FFmpeg DLLs en PATH. Harness: `--motor xtts --warmup-audio voz_kevin.wav --referencia voz_kevin.wav`; `warm-up: 3 segmentos`, `delta VRAM (Whisper) = 110 MiB`.
+
+**Tabla completa: supuesto anterior | medido ahora | veredicto (n≥20, p95, reloj inyectable):**
+
+| Etapa | Supuesto | Medido | Veredicto |
+|---|---|---|---|
+| ASR (faster-whisper tiny int8 es) | 300 ms | **762.0 ms** | el supuesto subestimaba 2.5× |
+| Traducción (Argos ES→EN, 20 frases distintas) | 200 ms | **206.0 ms** | supuesto razonable (argos cachea texto idéntico → frases distintas) |
+| Ruteo a VB-CABLE (drenado real, auto-verificación del piso físico) | 100 ms | **1003.5 ms** | el supuesto fallaba por 10×: un chunk de 1 s no puede ser reproducible en menos de 1 s (piso 1000 ms, verificación PASA) |
+| TTFA 1er chunk (XTTS streaming, n≥20, caliente) | 655–889 ms (n=5, no válido) | **727.0 ms** | confirmado con n≥20 |
+| **Pipeline end-to-end (audio → 1er audio en el CABLE, UNA corrida encadenada)** | inferido en 1489 ms (suma de supuestos) | **2756.4 ms** | **> 2000 ms → FALLA** |
+| VRAM co-residente | — | 2906.9 MiB | PASA (< 3276.8) |
+| RAM total (contexto anotado) | — | 13304.4 MiB | PASA (< 18432) |
+
+**Presupuesto TTFA derivado:** 2000 − 762.0 − 206.0 − 1003.5 = **28.5 ms** → TTFA 727.0 ms FALLA. Nota: con la semántica de drenado, el ruteo ≈ duración del chunk (el audio no se reproduce más rápido que su propia duración); el gate DECISIVO es el pipeline end-to-end medido (2756.4 ms), que falla por 756 ms.
+
+**Quién consume el presupuesto (análisis del pipeline 2756.4 ms):** ruteo-drenado 1003.5 ms (36 %, inherente a la definición "reproducible" para un chunk de ~1 s), ASR 762.0 ms (28 % — 2.5× su supuesto: primer candidato a optimizar, p. ej. modelo menor o `compute_type` distinto, NO el TTS), TTFA 727.0 ms (26 %), traducción 206.0 ms (7 %). Sin el drenado (ruteo = 0) la cadena sería 762 + 206 + 727 = 1695 ms < 2000 ms: el cuello es ASR + chunk largo, no el sintetizador.
+
+**Veredicto: XTTS-v2 RECHAZADO con fundamento medido.** Un bloqueante basta (pipeline end-to-end > 2000 ms); los gates de sesión (OOM, memoria, artefactos, A/B — lo firma el usuario escuchando —, endurance 90 min) quedan PENDIENTES y no cambian el veredicto. La optimización propuesta (no ejecutada, regla del usuario): **el ASR primero** (762 ms vs 300 ms supuestos), luego chunks de síntesis más cortos. La cadena del ADR-011 queda agotada: XTTS ✗ (medido), B ✗ (arquitectural, 7885.8 ms), Pocket ✗ (descartado) → el flujo arranca por la escalera del ADR-015 (nivel 3: voz genérica Supertonic + subtítulos, o nivel 4).
