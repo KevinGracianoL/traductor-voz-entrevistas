@@ -32,13 +32,6 @@ def test_parser_rechaza_wav_inexistente(tmp_path: Path, capsys: pytest.CaptureFi
     assert "el WAV de warm-up no existe" in capsys.readouterr().err
 
 
-def test_parser_rechaza_referencia_inexistente(tmp_path: Path) -> None:
-    with pytest.raises(SystemExit):
-        parser_harness().parse_args(
-            ["--warmup-audio", str(_wav(tmp_path)), "--referencia", str(tmp_path / "no.wav")]
-        )
-
-
 def test_parser_help_explica_flags() -> None:
     """Los helps de cada flag son los exactos (mata los mutantes de string)."""
     parser = parser_harness()
@@ -46,9 +39,6 @@ def test_parser_help_explica_flags() -> None:
     assert helps["warmup_audio"] == (
         "WAV de voz real para el warm-up de Whisper (obligatorio: sin el "
         "decoder ejercitado la VRAM subestima y el harness hace raise)"
-    )
-    assert helps["referencia"] == (
-        "Muestras de referencia para el perfil TTS (default: --warmup-audio)"
     )
     assert helps["pipeline_p95"] == "Pipeline warm p95 en ms, de la corrida de flujo (ADR-015)"
     assert helps["oom"] == "la corrida larga registró OOM (True = FALLA)"

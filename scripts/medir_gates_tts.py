@@ -36,6 +36,7 @@ from traductor.tts.gates import cabe_en_gates, evaluar_gates, resumen_gates
 from traductor.tts.harness import componer_medicion, medir_ram_mib, parser_harness
 from traductor.tts.modelos import VoiceProfile
 
+PERFIL = VoiceProfile(id="benchmark", nombre="Benchmark", muestras=("ref.wav",))
 TEXTO = "hola, esto es una prueba del motor de voz"
 N_REPETICIONES = 20
 # Piso para la auto-verificación de Whisper. tiny int8 son decenas de MB de
@@ -95,13 +96,13 @@ def _calentar_whisper_y_foto(whisper: Any, audio: Path) -> float | None:
     return vram_ocupada_mib(torch.cuda)
 
 
-def _medir_ttfa_p95(motor: Any, n: int, perfil: VoiceProfile) -> float | None:
+def _medir_ttfa_p95(motor: Any, n: int) -> float | None:
     """TTFA caliente p95, con el medidor honesto (math.ceil, None si n<20)."""
-    motor.sintetizar(TEXTO, perfil)  # warm-up
+    motor.sintetizar(TEXTO, PERFIL)  # warm-up
     registro: dict[str, list[float]] = {}
     for _ in range(n):
         _, elapsed_ms = medir_tiempo(
-            partial(motor.sintetizar, TEXTO, perfil),
+            partial(motor.sintetizar, TEXTO, PERFIL),
             clock=time.perf_counter,
         )
         registro = agregar_medicion(registro, "ttfa", elapsed_ms)
@@ -112,8 +113,6 @@ def main(argv: list[str] | None = None) -> None:
     import torch
 
     args = parser_harness().parse_args(argv)
-    referencia = args.referencia if args.referencia is not None else args.warmup_audio
-    perfil = VoiceProfile(id="benchmark", nombre="Benchmark", muestras=(str(referencia),))
 
     motor = _cargar_motor()
     vram_base = vram_ocupada_mib(torch.cuda)  # motor residente, Whisper aún no
@@ -131,7 +130,7 @@ def main(argv: list[str] | None = None) -> None:
                 f"{DELTA_WHISPER_MIN_MIB:g}): el warm-up no ejercitó CT2; "
                 "instrumento no fiable."
             )
-    ttfa = _medir_ttfa_p95(motor, N_REPETICIONES, perfil)
+    ttfa = _medir_ttfa_p95(motor, N_REPETICIONES)
     # Foto de co-residencia DESPUÉS de las síntesis TTFA: Whisper + motor con
     # sus reservas reales. Es el número del gate.
     vram = vram_ocupada_mib(torch.cuda)
