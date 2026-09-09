@@ -19,8 +19,7 @@ from traductor.tts.harness import (
     medir_ram_mib,
     parser_harness,
     perfil_benchmark,
-    piso_ruteo_ms,
-    verificar_piso_ruteo,
+    verificar_ruteo_primer_sample,
 )
 
 
@@ -226,27 +225,31 @@ def test_bytes_a_mib_unidad() -> None:
     assert _bytes_a_mib(512 * 1024**2) == 512.0
 
 
-def test_piso_ruteo_es_el_tiempo_fisico_de_drenado() -> None:
-    """1 s de audio a 24 kHz drena en >= 1.0 s: no puede reproducirse más rápido."""
-    assert piso_ruteo_ms(24000, 24000) == 1000.0
-    assert piso_ruteo_ms(12000, 24000) == 500.0
-    assert piso_ruteo_ms(4800, 48000) == 100.0
+def test_verificar_ruteo_acepta_primer_sample() -> None:
+    """El ruteo es time-to-first-sample-audible: decenas de ms, nunca la duración."""
+    verificar_ruteo_primer_sample(50.0, 1000.0)  # latencia de dispositivo
+    verificar_ruteo_primer_sample(200.0, 1000.0)
+    verificar_ruteo_primer_sample(999.0, 1000.0)  # justo debajo de la duración
+    verificar_ruteo_primer_sample(0.5, 1000.0)  # > 0 pero mínimo: aún es medición
 
 
-def test_verificar_piso_ruteo_acepta_el_piso_exacto() -> None:
-    """El piso exacto es válido (drenado a velocidad real, sin latencia extra)."""
-    verificar_piso_ruteo(1000.0, 24000, 24000)
-    verificar_piso_ruteo(1200.0, 24000, 24000)
+def test_verificar_ruteo_falla_si_mide_el_drenado() -> None:
+    """GUARD OBLIGATORIO: medir el drenado completo (p95 >= duración del chunk)
+    DEBE hacer fallar la verificación — es el error conocido que el guard
+    existe para atrapar (medir hasta que el audio termina, no hasta que empieza)."""
+    with pytest.raises(RuntimeError, match="drenado"):
+        verificar_ruteo_primer_sample(1000.0, 1000.0)  # p95 == duración
+    with pytest.raises(RuntimeError, match="drenado"):
+        verificar_ruteo_primer_sample(1003.5, 1000.0)  # el número del error real
+    with pytest.raises(RuntimeError, match="drenado"):
+        verificar_ruteo_primer_sample(1500.0, 1000.0)
 
 
-def test_verificar_piso_ruteo_raise_si_por_debajo() -> None:
-    """Un p95 debajo del piso físico es un instrumento roto, no un resultado bueno."""
-    with pytest.raises(RuntimeError, match="piso físico"):
-        verificar_piso_ruteo(50.0, 24000, 24000)  # aceptó el buffer, no reprodujo
-    with pytest.raises(RuntimeError, match="piso físico"):
-        verificar_piso_ruteo(999.9, 24000, 24000)
-
-
-def test_verificar_piso_ruteo_raise_sin_medicion() -> None:
-    with pytest.raises(RuntimeError, match="piso físico"):
-        verificar_piso_ruteo(None, 24000, 24000)
+def test_verificar_ruteo_falla_si_no_mide_nada() -> None:
+    """Piso: p95 indistinguible de cero = no se midió nada (instrumento roto)."""
+    with pytest.raises(RuntimeError, match="cero"):
+        verificar_ruteo_primer_sample(0.0, 1000.0)
+    with pytest.raises(RuntimeError, match="cero"):
+        verificar_ruteo_primer_sample(-5.0, 1000.0)
+    with pytest.raises(RuntimeError, match="cero"):
+        verificar_ruteo_primer_sample(None, 1000.0)

@@ -1,6 +1,6 @@
-# ADR-014 - Gates de aceptación del motor TTS
+﻿# ADR-014 - Gates de aceptación del motor TTS
 
-- **Estado:** gates con el sub-gate de TTFA **corregido** (presupuesto DERIVADO de etapas medidas, 2026-09-09 — evidencia abajo). XTTS-v2 y candidato B **medidos y RECHAZADOS** por el gate mal especificado / por TTFA arquitectural; el rechazo de XTTS quedó **invalidado** y su aprobación pendiente de pipeline end-to-end + gates de sesión. El módulo `gates.py` y el harness quedan como gate de regresión.
+- **Estado:** gates corregidos en dos pasos: presupuesto TTFA DERIVADO de etapas medidas (PR #19) y ruteo redefinido como **time-to-first-sample-audible** (corrección 2026-09-09 — la medición anterior contaba la duracion del chunk como latencia). **XTTS-v2 RECHAZADO con fundamento: pipeline end-to-end medido 2532.4 ms > 2000 ms** (evidencia abajo, cuarta capa). Candidato B RECHAZADO (arquitectural). Cadena del ADR-011 agotada; el flujo arranca por la escalera del ADR-015. El módulo `gates.py` y el harness quedan como gate de regresión.
 - **Contexto:** para que ADR-011 pase de "Propuesto" a un motor concreto, hace falta un **criterio de aceptación objetivo**. Sin él, la elección del motor sería una opinión más. Las mediciones se hacen en la GPU real (GTX 1650 Ti 4 GB, presupuesto ADR-003), con el ASR co-residente — mismo criterio que ADR-010 y ADR-012.
 - **Cadena de decisión:** se prueba primero **XTTS-v2** (fork `coqui-tts`, pesos CPML — aceptable por uso personal no comercial, declarado en ADR-011). **Orden práctico: correr SOLO el gate de VRAM primero** (smoke de ~5 min, con el ASR co-residente) antes de montar el venv completo — es el gate que más probablemente tumbe al candidato en esta GPU de 4 GB (la objeción de VRAM del descarte anterior, convertida en gate, no borrada). **Si falla cualquiera de los bloqueantes, se rechaza** (sin cuantización agresiva que empeore la voz) y se prueba **Supertonic 3 CPU + OpenVoice V2** (candidato B). El que XTTS se instale y se mida no lo declara aceptado: la aceptación es el resultado de los gates.
 - **Criterios de aceptación (todos deben pasar; `None` = sin medir → FALLA):**
@@ -106,3 +106,36 @@ Cada etapa debe estar MEDIDA en el hardware (n≥20, p95, reloj inyectable del h
 **Quién consume el presupuesto (análisis del pipeline 2756.4 ms):** ruteo-drenado 1003.5 ms (36 %, inherente a la definición "reproducible" para un chunk de ~1 s), ASR 762.0 ms (28 % — 2.5× su supuesto: primer candidato a optimizar, p. ej. modelo menor o `compute_type` distinto, NO el TTS), TTFA 727.0 ms (26 %), traducción 206.0 ms (7 %). Sin el drenado (ruteo = 0) la cadena sería 762 + 206 + 727 = 1695 ms < 2000 ms: el cuello es ASR + chunk largo, no el sintetizador.
 
 **Veredicto: XTTS-v2 RECHAZADO con fundamento medido.** Un bloqueante basta (pipeline end-to-end > 2000 ms); los gates de sesión (OOM, memoria, artefactos, A/B — lo firma el usuario escuchando —, endurance 90 min) quedan PENDIENTES y no cambian el veredicto. La optimización propuesta (no ejecutada, regla del usuario): **el ASR primero** (762 ms vs 300 ms supuestos), luego chunks de síntesis más cortos. La cadena del ADR-011 queda agotada: XTTS ✗ (medido), B ✗ (arquitectural, 7885.8 ms), Pocket ✗ (descartado) → el flujo arranca por la escalera del ADR-015 (nivel 3: voz genérica Supertonic + subtítulos, o nivel 4).
+
+## Cuarta capa - la metrica de ruteo era invalida y se corrige (2026-09-09, segundo error del mismo tipo)
+
+**Que se corrige:** la medicion de ruteo anterior (1003.5 ms con un chunk de ~1 s) NO era latencia: era la DURACION del audio. El instrumento median hasta que el chunk TERMINABA de reproducirse (drenado), cuando lo que importa es cuando EMPIEZA - el interlocutor oye el primer sample, no espera a que el chunk acabe. La duracion del audio no es latencia (si lo fuera, hablar mas largo te haria mas lento). Agravante: la auto-verificacion pedida ("p95 < piso de drenado -> raise") FORZO el error - blindo el bug en vez de atraparlo. El guard se INVIERTE.
+
+**Definicion nueva (implementada y verificada):** ruteo = TIME-TO-FIRST-SAMPLE-AUDIBLE: desde que el chunk se entrega al dispositivo hasta que el primer sample es reproducible en CABLE Input. NO incluye la duracion del chunk. El instrumento usa el LOOPBACK del CABLE: escribe a CABLE Input y DETECTA el primer sample audible (>= 5 muestras consecutivas sobre 0.2 % de full scale) leyendo CABLE Output - el dispositivo real entregandolo.
+
+**Guard invertido (atrapa el error conocido; test obligatorio: medir el drenado DEBE fallar):**
+- p95 >= duracion del chunk -> raise (la medicion incluyo el drenado otra vez).
+- p95 <= 0 (o None) -> raise (no se midio nada).
+- Imprime siempre: p95 medido, duracion del chunk y ambos limites.
+
+## Evidencia final corregida - XTTS-v2 RECHAZADO por el pipeline end-to-end medido (2026-09-09, VB-CABLE instalado)
+
+**Entorno:** idem capas anteriores (XTTS-v2 fork coqui-tts, perfil de Kevin, streaming caliente, faster-whisper co-residente, Argos con ARGOS_COMPUTE_TYPE=default, VB-CABLE, FFmpeg DLLs). Harness: `--motor xtts --warmup-audio voz_kevin.wav --referencia voz_kevin.wav`; `warm-up: 3 segmentos`, `delta VRAM (Whisper) = 110 MiB`.
+
+**Tabla completa: supuesto | medido antes (metrica rota) | medido ahora | veredicto (n>=20, p95):**
+
+| Etapa | Supuesto | Antes (roto) | Ahora | Veredicto |
+|---|---|---|---|---|
+| ASR (faster-whisper tiny int8 es) | 300 ms | 768.5 ms | **773.1 ms** | 2.5x el supuesto - primer candidato a optimizar |
+| Traduccion (Argos ES->EN, 20 frases distintas) | 200 ms | 176.6 ms | **175.0 ms** | supuesto razonable |
+| Ruteo a VB-CABLE (primer sample audible, loopback) | 100 ms | 1003.5 ms (duracion del chunk, invalido) | **221.0 ms** | latencia real del dispositivo (guard invertido PASA: 0 < 221 < 1000) |
+| TTFA 1er chunk (XTTS streaming, n>=20) | 655-889 (n=5) | 691.1 ms | **686.0 ms** | confirmado con n>=20 |
+| **Pipeline end-to-end (audio -> primer sample audible en el CABLE, UNA corrida encadenada)** | inferido 1489 ms | 2756.4 ms (ruteo inflado) | **2532.4 ms** | **> 2000 ms -> FALLA** |
+| VRAM co-residente | - | 2906.9 | **2938.9 MiB** | PASA (< 3276.8) |
+| RAM total (contexto anotado) | - | 13198.6 | **13506.7 MiB** | PASA (< 18432) |
+
+**Presupuesto TTFA derivado:** 2000 - 773.1 - 175.0 - 221.0 = **830.9 ms** -> TTFA 686.0 ms **PASA** (primera vez que el gate TTFA pasa con la metrica correcta).
+
+**Margen contra los 2000 ms:** el pipeline mide **2532.4 ms** - FALLA por 532 ms. La suma de etapas (773.1 + 175.0 + 686.0 + 221.0 = 1855.1 ms) cabe, pero la corrida ENCADENADA no: hay 677 ms de diferencia entre la suma y la medicion real - exactamente el tipo de inferencia que produjo los rechazos erroneos anteriores; por eso el veredicto es la corrida encadenada, no la suma.
+
+**Veredicto: XTTS-v2 RECHAZADO con fundamento medido.** Un bloqueante basta (pipeline end-to-end 2532.4 ms > 2000 ms). Margen negativo -> se PROPONE (no se ejecuta, regla del usuario) la optimizacion del ASR: 773.1 ms = 45 % de la suma de etapas y 2.5x su supuesto original; opciones a evaluar: modelo menor, compute_type distinto, ajuste de beam size. Los gates de sesion (OOM, memoria, artefactos, A/B - lo firma el usuario escuchando -, endurance 90 min) quedan PENDIENTES y no cambian el veredicto. Cadena del ADR-011 agotada: XTTS ? (medido), B ? (arquitectural, 7885.8 ms), Pocket ? (descartado). Licencia recordada: los pesos de XTTS-v2 son Coqui Public Model License (no comercial) - valido para uso personal, no para servicio a terceros (ya declarado en ADR-011).

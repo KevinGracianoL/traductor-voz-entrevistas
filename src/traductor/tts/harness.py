@@ -153,28 +153,26 @@ def medir_ram_mib() -> float | None:
     return _bytes_a_mib(psutil.virtual_memory().used)  # pragma: no cover - máquina
 
 
-def piso_ruteo_ms(frames: int, sample_rate: int) -> float:
-    """Tiempo físico mínimo para que un buffer drene al sample rate (ms).
+def verificar_ruteo_primer_sample(p95_ms: float | None, duracion_chunk_ms: float) -> None:
+    """Auto-verificación del instrumento de ruteo (time-to-first-sample-audible).
 
-    Un buffer de `frames` muestras a `sample_rate` Hz no puede reproducirse
-    más rápido que en `frames / sample_rate` segundos: cualquier medición de
-    ruteo por debajo de esto significa que la escritura solo fue ACEPTADA por
-    el buffer del dispositivo, no que el audio fuera reproducible.
+    El ruteo mide desde que el chunk se entrega al dispositivo hasta que el
+    PRIMER sample es reproducible en CABLE Input — NUNCA hasta que el chunk
+    termina de sonar (la duración del audio no es latencia). El guard atrapa
+    el error conocido (segunda métrica mal definida, ver ADR-014):
+    - p95 >= duración del chunk -> la medición incluyó el drenado completo:
+      mide "hasta que terminó de sonar", no "hasta que empezó" -> raise.
+    - p95 <= 0 (o None) -> no se midió nada -> raise.
     """
-    return frames / sample_rate * 1000.0
-
-
-def verificar_piso_ruteo(p95_ms: float | None, frames: int, sample_rate: int) -> None:
-    """Auto-verificación del instrumento de ruteo (patrón delta VRAM de Whisper).
-
-    Un p95 por debajo del piso físico es un instrumento roto, no un resultado
-    bueno: la escritura retornó antes de que el audio pudiera reproducirse.
-    Raises: RuntimeError con el número medido y el piso.
-    """
-    piso = piso_ruteo_ms(frames, sample_rate)
-    if p95_ms is None or p95_ms < piso:
+    if p95_ms is None or p95_ms <= 0:
         raise RuntimeError(
-            f"p95 de ruteo {p95_ms} ms < piso físico {piso:g} ms "
-            f"({frames} frames a {sample_rate} Hz): la escritura solo fue "
-            "aceptada por el buffer, no reproducida. Instrumento roto."
+            f"p95 de ruteo {p95_ms} ms: indistinguible de cero — no se midió "
+            "nada (instrumento roto)"
+        )
+    if p95_ms >= duracion_chunk_ms:
+        raise RuntimeError(
+            f"p95 de ruteo {p95_ms:g} ms >= duración del chunk "
+            f"{duracion_chunk_ms:g} ms: la medición incluyó el drenado "
+            "completo, no el primer sample audible (error conocido, "
+            "instrumento roto)"
         )

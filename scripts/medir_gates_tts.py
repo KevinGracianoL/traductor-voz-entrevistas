@@ -86,6 +86,7 @@ FRASES_TRADUCCION = (
     "Estoy disponible para comenzar la proxima semana.",
 )
 SR_FLUJO = 24000  # sample rate del chunk del flujo (XTTS) para el ruteo
+UMBRAL_AUDIBLE = 64  # 0.2 % de full scale: el CABLE es passthrough digital (ruido ~0)
 
 
 def _normalizar(texto: str) -> str:
@@ -215,19 +216,19 @@ def _detectar_cable() -> str | None:
     return None
 
 
-def _dispositivo_cable(pa: Any) -> int:
-    """Índice del CABLE Input de 2 canales (el estándar); fallback al primero."""
+def _dispositivo_cable(pa: Any, lado: str) -> int:
+    """Índice del CABLE {lado} de 2 canales (el estándar); fallback al primero."""
     for i in range(pa.get_device_count()):
         info = pa.get_device_info_by_index(i)
         nombre = str(info["name"] or "")
-        if "CABLE Input" in nombre and info["maxOutputChannels"] == 2:
+        if f"CABLE {lado}" in nombre and info["maxOutputChannels"] == 2:
             return i
     for i in range(pa.get_device_count()):
         info = pa.get_device_info_by_index(i)
         nombre = str(info["name"] or "")
-        if "CABLE Input" in nombre:
+        if f"CABLE {lado}" in nombre:
             return i
-    raise RuntimeError("dispositivo CABLE Input no encontrado")
+    raise RuntimeError(f"dispositivo CABLE {lado} no encontrado")
 
 
 def _mono24k_a_cable48k(pcm16_mono: bytes) -> bytes:
@@ -240,14 +241,34 @@ def _mono24k_a_cable48k(pcm16_mono: bytes) -> bytes:
     return bytes((np.clip(stereo, -1.0, 1.0) * 32767).astype(np.int16).tobytes())
 
 
-def _medir_ruteo_p95(n: int, cable: str | None) -> float | None:
-    """Ruteo a VB-CABLE p95: el chunk se considera rutado cuando el dispositivo
-    lo CONSUMIÓ (drenado), no cuando el buffer lo acepta.
+def _primer_audio_index(datos: bytes) -> int | None:
+    """Índice del primer sample audible (>= 5 consecutivos sobre el umbral).
 
-    Auto-verificación obligatoria (patrón delta VRAM de Whisper): si el p95
-    sale por debajo del piso físico (frames/sample_rate del chunk de 1 s), la
-    escritura solo fue aceptada -> raise. Sin cable instalado devuelve None
-    (FALLA por regla).
+    El CABLE es passthrough digital (ruido ~0): un run corto sobre el umbral
+    es señal, no ruido. None si el buffer no contiene señal.
+    """
+    import numpy as np
+
+    muestras = np.frombuffer(datos, dtype=np.int16)
+    for i in range(len(muestras) - 4):
+        if abs(muestras[i]) > UMBRAL_AUDIBLE and all(abs(muestras[i + 1 : i + 5]) > UMBRAL_AUDIBLE):
+            return i
+    return None
+
+
+def _medir_ruteo_p95(n: int, cable: str | None) -> float | None:
+    """Ruteo a VB-CABLE p95: TIME-TO-FIRST-SAMPLE-AUDIBLE.
+
+    El CABLE es un bucle: escribimos a CABLE Input y DETECTAMOS el primer
+    sample audible en CABLE Output (el dispositivo real entregándolo) — desde
+    que se entrega el chunk hasta que el primer sample es reproducible. NO
+    incluye la duración del chunk (corrección 2026-09-09: la versión anterior
+    medía el drenado completo, 1003.5 ms para un chunk de 1 s = la duración
+    del audio, no latencia).
+
+    Auto-verificación (guard INVERTIDO, atrapa el error conocido):
+    p95 >= duración del chunk -> midió el drenado -> raise; p95 <= 0 -> raise.
+    Sin cable instalado devuelve None (FALLA por regla).
     """
     if cable is None:
         print("Ruteo: VB-CABLE NO instalado -> gate sin medir (FALLA por regla)")
@@ -255,47 +276,73 @@ def _medir_ruteo_p95(n: int, cable: str | None) -> float | None:
     import numpy as np
     import pyaudio
 
-    from traductor.tts.harness import verificar_piso_ruteo
+    from traductor.tts.harness import verificar_ruteo_primer_sample
 
     RATE_CABLE = 48000
-    FRAMES_BLOQUE = 9600  # 0.2 s a 48 kHz: cabe en el buffer del dispositivo
+    FRAMES_BLOQUE = 9600  # 0.2 s a 48 kHz
+    FRAMES_LECTURA = 480  # 10 ms: precisión de detección del primer sample
     pa = pyaudio.PyAudio()
     try:
-        stream = pa.open(
+        salida = pa.open(
             format=pyaudio.paInt16,
             channels=2,
             rate=RATE_CABLE,
             output=True,
-            output_device_index=_dispositivo_cable(pa),
+            output_device_index=_dispositivo_cable(pa, "Input"),
             frames_per_buffer=FRAMES_BLOQUE,
         )
+        entrada = pa.open(
+            format=pyaudio.paInt16,
+            channels=2,
+            rate=RATE_CABLE,
+            input=True,
+            input_device_index=_dispositivo_cable(pa, "Output"),
+            frames_per_buffer=FRAMES_LECTURA,
+        )
         try:
-            tono_mono = (np.sin(np.arange(SR_FLUJO) * 0.05) * 1000).astype(np.int16).tobytes()
+            # el probe empieza en amplitud plena (fase pi/2): detectable al instante
+            tono_mono = (
+                (np.sin(np.arange(SR_FLUJO) * 0.05 + np.pi / 2) * 1000).astype(np.int16).tobytes()
+            )
             tono_cable = _mono24k_a_cable48k(tono_mono)  # 1 s de audio
+            duracion_ms = SR_FLUJO / SR_FLUJO * 1000.0  # 1000 ms
             bloques = [
                 tono_cable[i : i + FRAMES_BLOQUE * 4]
                 for i in range(0, len(tono_cable), FRAMES_BLOQUE * 4)
             ]
 
-            def rutear_y_drenar() -> object:
+            def rutear_y_detectar() -> object:
+                while entrada.get_read_available() > 0:  # drenar antes de medir
+                    entrada.read(entrada.get_read_available(), exception_on_overflow=False)
+                t0 = time.perf_counter()
                 for bloque in bloques:
-                    stream.write(bloque)
-                    # el bloque es reproducible cuando el dispositivo lo consumió:
-                    # el buffer vuelve a aceptar el bloque completo
-                    while stream.get_write_available() < FRAMES_BLOQUE:
-                        time.sleep(0.005)
-                return None
+                    salida.write(bloque)
+                    while entrada.get_read_available() > 0:
+                        datos = entrada.read(
+                            min(FRAMES_LECTURA, entrada.get_read_available()),
+                            exception_on_overflow=False,
+                        )
+                        indice = _primer_audio_index(datos)
+                        if indice is not None:
+                            elapsed = (time.perf_counter() - t0) * 1000.0
+                            return elapsed - indice / RATE_CABLE * 1000.0
+                raise RuntimeError(
+                    "no se detectó el primer sample en CABLE Output: instrumento roto"
+                )
 
-            p95 = _medir_p95(rutear_y_drenar, n, "ruteo")
-            verificar_piso_ruteo(p95, SR_FLUJO, SR_FLUJO)
+            p95 = _medir_p95(rutear_y_detectar, n, "ruteo")
+            verificar_ruteo_primer_sample(p95, duracion_ms)
             print(
-                f"Ruteo p95: {p95:.1f} ms | piso físico: "
-                f"{SR_FLUJO / SR_FLUJO * 1000:g} ms (auto-verificación PASA)"
+                f"Ruteo p95 (primer sample audible): {p95:.1f} ms | duración "
+                f"chunk: {duracion_ms:g} ms | límites: 0 < p95 < {duracion_ms:g} "
+                "(auto-verificación PASA)"
             )
             return p95
         finally:
-            stream.stop_stream()
-            stream.close()
+            salida.stop_stream()
+            salida.close()
+            entrada.stop_stream()
+            entrada.close()
     finally:
         pa.terminate()
 
@@ -378,24 +425,49 @@ def _medir_pipeline_p95(
         return np.asarray(muestras[inicio : inicio + ventana])
 
     pa: Any = None
-    stream: Any = None
+    salida: Any = None
+    entrada: Any = None
     RATE_CABLE = 48000
     FRAMES_BLOQUE = 9600
+    FRAMES_LECTURA = 480
     if cable is not None:
         import pyaudio
 
         pa = pyaudio.PyAudio()
-        stream = pa.open(
+        salida = pa.open(
             format=pyaudio.paInt16,
             channels=2,
             rate=RATE_CABLE,
             output=True,
-            output_device_index=_dispositivo_cable(pa),
+            output_device_index=_dispositivo_cable(pa, "Input"),
             frames_per_buffer=FRAMES_BLOQUE,
+        )
+        entrada = pa.open(
+            format=pyaudio.paInt16,
+            channels=2,
+            rate=RATE_CABLE,
+            input=True,
+            input_device_index=_dispositivo_cable(pa, "Output"),
+            frames_per_buffer=FRAMES_LECTURA,
         )
     try:
 
+        def detectar_primer_sample(t0: float) -> float:
+            """Espera el primer sample audible en CABLE Output (loopback)."""
+            while entrada.get_read_available() > 0:
+                datos = entrada.read(
+                    min(FRAMES_LECTURA, entrada.get_read_available()),
+                    exception_on_overflow=False,
+                )
+                indice = _primer_audio_index(datos)
+                if indice is not None:
+                    return (time.perf_counter() - t0) * 1000.0 - indice / RATE_CABLE * 1000.0
+            return -1.0  # aún no llegó señal
+
         def una_iteracion(i: int) -> object:
+            while entrada.get_read_available() > 0:  # drenar antes de medir
+                entrada.read(entrada.get_read_available(), exception_on_overflow=False)
+            t0 = time.perf_counter()
             segmentos = list(whisper.transcribe(corte(i), language="es")[0])
             texto_es = " ".join(s.text for s in segmentos)
             texto_en = traducir(texto_es, "es", "en")
@@ -403,12 +475,26 @@ def _medir_pipeline_p95(
                 chunk = _primer_chunk_xtts(motor, texto_en, latentes)
             else:
                 chunk = motor.sintetizar(texto_en, perfil)
-            if stream is not None:
+            if salida is not None:
                 pcm = _mono24k_a_cable48k(_chunk_a_pcm16(chunk))
-                for i in range(0, len(pcm), FRAMES_BLOQUE * 4):
-                    stream.write(pcm[i : i + FRAMES_BLOQUE * 4])
-                    while stream.get_write_available() < FRAMES_BLOQUE:
-                        time.sleep(0.005)
+                bloques = [
+                    pcm[i : i + FRAMES_BLOQUE * 4] for i in range(0, len(pcm), FRAMES_BLOQUE * 4)
+                ]
+                for bloque in bloques:
+                    salida.write(bloque)
+                    primer = detectar_primer_sample(t0)
+                    if primer > 0:
+                        return primer
+                # si el chunk terminó sin detectar (silencio inicial largo)
+                while True:
+                    primer = detectar_primer_sample(t0)
+                    if primer > 0:
+                        return primer
+                    if time.perf_counter() - t0 > 5.0:
+                        raise RuntimeError(
+                            "no se detectó el primer sample en CABLE Output: instrumento roto"
+                        )
+                    time.sleep(0.01)
             return chunk
 
         una_iteracion(0)  # warm-up
@@ -417,11 +503,14 @@ def _medir_pipeline_p95(
             _, elapsed_ms = medir_tiempo(partial(una_iteracion, i), clock=time.perf_counter)
             registro = agregar_medicion(registro, "pipeline", elapsed_ms)
         p95 = resumen_estadisticas(registro)["pipeline"]["p95"]
-        return p95, stream is not None
+        return p95, salida is not None
     finally:
-        if stream is not None:
-            stream.stop_stream()
-            stream.close()
+        if salida is not None:
+            salida.stop_stream()
+            salida.close()
+        if entrada is not None:
+            entrada.stop_stream()
+            entrada.close()
         if pa is not None:
             pa.terminate()
 
