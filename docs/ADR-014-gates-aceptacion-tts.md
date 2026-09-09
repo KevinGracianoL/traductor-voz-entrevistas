@@ -23,15 +23,17 @@
 
 ## Evidencia — XTTS-v2 rechazado por TTFA (2026-09-08)
 
-**Entorno:** Ryzen 5 4600H / GTX 1650 Ti 4 GB / Windows. Motor: XTTS-v2 via `coqui-tts` 0.27.5 (fork idiap), torch 2.14.0+cu132, en venv propio (venv-tts). ASR co-residente: faster-whisper tiny int8. Referencia de voz: `scripts/audio/voz_kevin.wav` (13 s, 16 kHz mono). Harness con `--warmup-audio`; `warm-up: 3 segmentos`, `delta VRAM (Whisper) = 110 MiB`.
+**Entorno:** Ryzen 5 4600H / GTX 1650 Ti 4 GB / Windows. Motor: XTTS-v2 vía `coqui-tts` 0.27.5 (fork idiap), torch 2.14.0+cu132, en venv propio (venv-tts). ASR co-residente: faster-whisper tiny int8. Referencia de voz: `scripts/audio/voz_kevin.wav` (13 s, 16 kHz mono). Harness con `--warmup-audio`; `warm-up: 3 segmentos`, `delta VRAM (Whisper) = 110 MiB`.
 
-| Gate | Medido | Limite | Estado |
+| Gate | Medido | Límite | Estado |
 |---|---|---|---|
-| TTFA sintesis completa (contrato no-streaming, p95 n=20) | **3574.6 ms** | < 400 ms | FALLA |
-| TTFA primer chunk (streaming real `inference_stream`, n=5) | rango **655-889 ms** (p95 no valido con n<20) | < 400 ms | FALLA |
+| TTFA síntesis completa (contrato no-streaming, p95 n=20) | **3574.6 ms** | < 400 ms | FALLA |
+| TTFA primer chunk (streaming real `inference_stream`, n=5) | rango **655–889 ms** (p95 no válido con n<20) | < 400 ms | FALLA |
 | VRAM co-residente (XTTS + Whisper) | 3010.9 MiB | < 3276.8 MiB | PASA |
-| RAM total (maquina) | 11804.9 MiB | < 18432 MiB | PASA |
+| RAM total (máquina) | 11804.9 MiB | < 18432 MiB | PASA |
 
-**Lectura honesta del TTFA:** el gate define TTFA = time to first audio; con el contrato no-streaming se mide la sintesis completa (3574 ms). XTTS soporta streaming (`inference_stream`, 6 chunks por frase) y el **primer chunk mas rapido observado (655 ms) ya supera el limite por 60 %** — el rechazo no depende del `n` (no se reporta p95 con n=5; la regla del ADR exige n>=20). Las latents de condicionamiento (756 ms) se calculan una vez y no entran al presupuesto por turno (ADR-011).
+**Lectura honesta del TTFA:** el gate define TTFA = time to first audio; con el contrato no-streaming se mide la síntesis completa (3574 ms). XTTS soporta streaming (`inference_stream`, 6 chunks por frase) y el **primer chunk más rápido observado (655 ms) ya supera el límite por 60 %** — el rechazo no depende del `n` (no se reporta p95 con n=5; la regla del ADR exige n≥20). Las latents de condicionamiento (756 ms) se calculan una vez y no entran al presupuesto por turno (ADR-011).
 
-**Veredicto:** un bloqueante basta → **XTTS-v2 RECHAZADO** (sin cuantizacion agresiva). Sigue **Supertonic 3 CPU + OpenVoice V2 (candidato B)** — este ADR queda como gate de regresion y registro del go/no-go.
+**Contexto de RAM (nota):** el valor 11804.9 MiB es el uso de TODA la máquina (`psutil.virtual_memory().used`) y **no se anotó qué había abierto** durante la corrida. Hoy sobra holgura (~6.6 GB), pero el candidato B puede quedar al filo: **las corridas futuras deben anotar el contexto** (navegador, Meet, etc.) como se hace con `nvidia-smi`.
+
+**Veredicto:** un bloqueante basta → **XTTS-v2 RECHAZADO** (sin cuantización agresiva). Sigue **Supertonic 3 CPU + OpenVoice V2 (candidato B)** — este ADR queda como gate de regresión y registro del go/no-go.

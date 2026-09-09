@@ -8,17 +8,22 @@ el harness es hardware (GPU + modelos), su lógica no. El script
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from pathlib import Path
 
 from traductor.tts.gates import MedicionTts
 
 
-def _wav_existente(ruta: str) -> Path:
-    """Validación de argparse: falla antes de tocar la GPU (r8 PR #15)."""
-    p = Path(ruta)
-    if not p.is_file():
-        raise argparse.ArgumentTypeError(f"el WAV de warm-up no existe: {ruta}")
-    return p
+def _wav_existente(nombre: str) -> Callable[[str], Path]:
+    """Fábrica de validación argparse: el mensaje nombra al flag que falla."""
+
+    def validar(ruta: str) -> Path:
+        p = Path(ruta)
+        if not p.is_file():
+            raise argparse.ArgumentTypeError(f"el WAV de {nombre} no existe: {ruta}")
+        return p
+
+    return validar
 
 
 def parser_harness() -> argparse.ArgumentParser:
@@ -31,14 +36,14 @@ def parser_harness() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--warmup-audio",
-        type=_wav_existente,
+        type=_wav_existente("warm-up"),
         required=True,
         help="WAV de voz real para el warm-up de Whisper (obligatorio: sin el "
         "decoder ejercitado la VRAM subestima y el harness hace raise)",
     )
     parser.add_argument(
         "--referencia",
-        type=_wav_existente,
+        type=_wav_existente("referencia"),
         help="Muestras de referencia para el perfil TTS (default: --warmup-audio)",
     )
     parser.add_argument(
