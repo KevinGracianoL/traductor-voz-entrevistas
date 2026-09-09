@@ -62,6 +62,21 @@ def parser_harness() -> argparse.ArgumentParser:
         help="Texto sintetizado en cada repetición (la salida del flujo ES→EN es inglés)",
     )
     parser.add_argument(
+        "--asr-p95",
+        type=float,
+        help="ASR warm p95 en ms, MEDIDO en el hardware (presupuesto TTFA derivado)",
+    )
+    parser.add_argument(
+        "--traduccion-p95",
+        type=float,
+        help="Traducción Argos p95 en ms, MEDIDA (presupuesto TTFA derivado)",
+    )
+    parser.add_argument(
+        "--ruteo-p95",
+        type=float,
+        help="Ruteo a VB-CABLE p95 en ms, MEDIDO (presupuesto TTFA derivado)",
+    )
+    parser.add_argument(
         "--pipeline-p95",
         type=float,
         help="Pipeline warm p95 en ms, de la corrida de flujo (ADR-015)",
@@ -83,16 +98,27 @@ def parser_harness() -> argparse.ArgumentParser:
 
 def componer_medicion(
     ttfa: float | None,
+    asr: float | None,
+    traduccion: float | None,
+    ruteo: float | None,
+    pipeline: float | None,
     vram: float | None,
     ram: float | None,
     args: argparse.Namespace,
 ) -> MedicionTts:
-    """Une lo medido (TTFA/VRAM/RAM) con lo reportado de sesión en la medición."""
+    """Une lo medido (TTFA/etapas/pipeline/VRAM/RAM) con lo reportado de sesión.
+
+    El pipeline MEDIDO gana sobre `--pipeline-p95` (el flag queda para la
+    corrida de sesión del ADR-019); los flags de sesión van tal cual.
+    """
     return MedicionTts(
         ttfa_caliente_p95_ms=ttfa,
+        asr_p95_ms=asr,
+        traduccion_p95_ms=traduccion,
+        ruteo_p95_ms=ruteo,
         vram_mib=vram,
         ram_mib=ram,
-        pipeline_p95_ms=args.pipeline_p95,
+        pipeline_p95_ms=args.pipeline_p95 if pipeline is None else pipeline,
         oom=args.oom,
         memoria_estable=args.memoria_estable,
         artefactos=args.artefactos,

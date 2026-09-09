@@ -1,11 +1,11 @@
 # ADR-014 - Gates de aceptación del motor TTS
 
-- **Estado:** XTTS-v2 y candidato B (Supertonic 3 CPU + OpenVoice V2) **medidos y RECHAZADOS por TTFA** (evidencia abajo). El módulo `gates.py` y el harness quedan como gate de regresión; la decisión del motor sigue abierta (ADR-011) y la escalera del ADR-015 (nivel 3: voz genérica + subtítulos) es la vía de respaldo del flujo.
+- **Estado:** gates con el sub-gate de TTFA **corregido** (presupuesto DERIVADO de etapas medidas, 2026-09-09 — evidencia abajo). XTTS-v2 y candidato B **medidos y RECHAZADOS** por el gate mal especificado / por TTFA arquitectural; el rechazo de XTTS quedó **invalidado** y su aprobación pendiente de pipeline end-to-end + gates de sesión. El módulo `gates.py` y el harness quedan como gate de regresión.
 - **Contexto:** para que ADR-011 pase de "Propuesto" a un motor concreto, hace falta un **criterio de aceptación objetivo**. Sin él, la elección del motor sería una opinión más. Las mediciones se hacen en la GPU real (GTX 1650 Ti 4 GB, presupuesto ADR-003), con el ASR co-residente — mismo criterio que ADR-010 y ADR-012.
 - **Cadena de decisión:** se prueba primero **XTTS-v2** (fork `coqui-tts`, pesos CPML — aceptable por uso personal no comercial, declarado en ADR-011). **Orden práctico: correr SOLO el gate de VRAM primero** (smoke de ~5 min, con el ASR co-residente) antes de montar el venv completo — es el gate que más probablemente tumbe al candidato en esta GPU de 4 GB (la objeción de VRAM del descarte anterior, convertida en gate, no borrada). **Si falla cualquiera de los bloqueantes, se rechaza** (sin cuantización agresiva que empeore la voz) y se prueba **Supertonic 3 CPU + OpenVoice V2** (candidato B). El que XTTS se instale y se mida no lo declara aceptado: la aceptación es el resultado de los gates.
 - **Criterios de aceptación (todos deben pasar; `None` = sin medir → FALLA):**
 
-  - **TTFA caliente p95 < 400 ms.** TTFA = time to first audio. Con el contrato actual (no streaming) TTFA ≈ latencia de la primera síntesis; XTTS soporta streaming y el primer audio **no puede bloquearse esperando toda la frase**. `p95` con `n≥20` (misma honestidad que ADR-003/012).
+  - **TTFA (time to first audio) = PRIMER CHUNK reproducible, caliente p95 < presupuesto DERIVADO:** `2000 ms − (ASR p95 + traducción p95 + ruteo p95)`, cada etapa MEDIDA en el hardware con n≥20 (corrección 2026-09-09: el "< 400 ms" literal era un sub-presupuesto inventado). Etapa sin medir → presupuesto no derivable → FALLA.
   - **VRAM total (ASR + motor) < 3.2 GB** (3276.8 MiB). El "~1 GB" del ASR es un **supuesto a medir en la primera corrida**, no una cifra verificada.
   - **RAM total < 18 GB.** Definición: `psutil.virtual_memory().used` de TODA la máquina — el veredicto depende de qué más esté abierto; anotar el contexto al correr (como con `nvidia-smi`).
   - **Pipeline warm p95 < 2 s** (cierre del turno: ASR ≤300 ms + traducción ≤200 ms + primer fragmento ≤350 ms + ruteo ≤100 ms → ~1.3 s, dentro del objetivo de 1.5–2 s del ADR-003).
@@ -53,3 +53,34 @@
 **Lectura honesta del TTFA:** el pipeline B es **no-streaming por construcción**: Supertonic sintetiza el fragmento completo (~1.75 s caliente para 6.4 s de audio) y OpenVoice V2 convierte el timbre del fragmento completo (~5-6 s). No existe "primer chunk" en ninguna etapa — el TTFA es la síntesis entera. **7885.8 ms es 20× el límite** y el número es estable (n=20, p95). La latencia no depende del streaming: es el costo del convertidor sobre el audio completo.
 
 **Veredicto:** un bloqueante basta → **candidato B RECHAZADO**. Con XTTS y B descartados, la cadena del ADR-011 está agotada (Pocket ya estaba descartado). La escalera del ADR-015 apunta al nivel 3 (voz inglesa **genérica** Supertonic/Piper + subtítulos) — sin clonación de timbre, la etapa de conversión desaparece y queda solo el synth (~1.75 s para 6.4 s de audio, aún por encima del TTFA de 400 ms para fragmentos completos; la decisión de flujo decide cómo partir el audio y qué gate aplica). La clonación de voz (Fase 3) queda condicionada a un motor que cumpla los gates: la evidencia de este ADR es el criterio, no la opinión.
+
+## Corrección — el sub-gate de TTFA era inválido y se reemplaza por uno DERIVADO (2026-09-09)
+
+**Qué se corrige:** el gate "TTFA < 400 ms" de la evidencia de 2026-09-08 era un **sub-presupuesto inventado** (ASR 300 + traducción 200 + primer fragmento 350 + ruteo 100 = 950 ms de etapas "presupuestadas"), nunca validado contra el total. Con el propio número medido de XTTS streaming (primer chunk 889 ms peor caso, n=5), la suma contra el objetivo end-to-end de ADR-003 cabe: **300 + 200 + 889 + 100 = 1489 ms < 2000 ms**. La evidencia anterior NO se borra (registro del error); este apartado corrige el criterio y pega la medición nueva. Regla del usuario que dirige el proyecto: **nunca fijar un número a ojo** — el presupuesto se deriva de etapas medidas.
+
+**Criterio nuevo (implementado en `gates.py` como cálculo, no literal):**
+
+```
+presupuesto_ttfa = 2000 ms − (ASR p95 + traducción p95 + ruteo p95)
+```
+
+Cada etapa debe estar MEDIDA en el hardware (n≥20, p95, reloj inyectable del harness); una etapa sin medir hace el presupuesto no derivable y el gate FALLA. TTFA se redefine como **primer chunk de audio reproducible** (streaming caliente para XTTS).
+
+**Etapas medidas (2026-09-09, máquina objetivo, venv-tts, faster-whisper co-residente, `warm-up: 3 segmentos`):**
+
+| Etapa | Supuesto anterior | Medido ahora (p95, n≥20) | Veredicto |
+|---|---|---|---|
+| ASR (faster-whisper tiny int8, es) | 300 ms | **768.5 ms** | el supuesto subestimaba 2.5× |
+| Traducción (Argos ES→EN, 20 frases distintas) | 200 ms | **176.6 ms** | supuesto razonable (argos 1.11 cachea el mismo texto: se miden frases distintas como los turnos reales) |
+| Ruteo a VB-CABLE | 100 ms | **sin medir — VB-CABLE NO instalado** | gate FALLA por regla (sin medir no pasa) |
+| TTFA 1er chunk (XTTS `inference_stream`, n≥20, caliente) | 655–889 ms (n=5) | **691.1 ms** | el n=5 de la corrida anterior no cumplía la regla n≥20; el p95 n≥20 confirma el orden de magnitud |
+| Pipeline end-to-end (audio → 1er audio en el micrófono virtual) | inferido sumando supuestos (nunca medido) | **sin medir — VB-CABLE ausente** | gate FALLA por regla; la inferencia es exactamente lo que produjo el rechazo equivocado |
+| VRAM co-residente | — | **2906.9 MiB** | PASA (< 3276.8) |
+| RAM total (máquina, contexto anotado) | — | **13198.6 MiB** | PASA (< 18432) |
+
+**Presupuesto derivado con lo medido:** 2000 − 768.5 − 176.6 − ruteo → **1054.9 ms con ruteo = 0** (o 954.9 ms con el supuesto de 100 ms). El TTFA medido (691.1 ms) cabe en cualquiera de los dos — pero el gate FALLA hoy porque **el ruteo no se puede medir** (VB-CABLE no está instalado) y el pipeline end-to-end sigue sin medir. XTTS **NO queda aprobado**: la corrección invalida el rechazo anterior, no fabrica un pase — la aprobación requiere el pipeline completo medido (instalar VB-CABLE) y los gates de sesión (OOM, memoria, artefactos, A/B, endurance 90 min).
+
+**Hallazgos de la medición:**
+- `ARGOS_COMPUTE_TYPE` sin "default" hace que argos es→en produzca basura ("mainstream" en bucle); el wrapper `traductor.traduccion.argos` ya lo fija — el harness exige salida correcta (sanity) antes de medir la etapa.
+- Argos cachea el mismo texto (0.0 ms): medir con frases distintas, como los turnos reales.
+- torchaudio/torchcodec necesita las DLL compartidas de FFmpeg en `PATH` (build BtbN, mismo requisito que la evidencia XTTS).

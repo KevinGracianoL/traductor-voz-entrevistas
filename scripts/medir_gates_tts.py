@@ -1,31 +1,38 @@
 """Mide los gates de aceptación del motor TTS en la máquina objetivo (ADR-014).
 
 Carga el motor candidato (primario: XTTS-v2 vía fork coqui-tts, ADR-011) Y
-faster-whisper co-residente (el "~1 GB" del ADR es un supuesto, la primera
-corrida lo mide). Mide TTFA caliente p95 con el medidor honesto (n>=20,
-math.ceil, None si falta), la VRAM TOTAL a nivel driver (`vram_ocupada_mib`,
-incluye CTranslate2) y la RAM del sistema (psutil). La foto de Whisper se toma
-justo tras su warm-up (delta aislado); la de co-residencia, después de las
-síntesis TTFA.
+faster-whisper co-residente. Mide con el medidor honesto (n>=20, math.ceil,
+None si falta):
+- las etapas que antes eran supuestos: ASR p95, traducción Argos p95, ruteo a
+  VB-CABLE p95 — el presupuesto de TTFA se DERIVA de ellas (2000 ms − etapas),
+  nunca se declara;
+- el TTFA como PRIMER CHUNK reproducible (inference_stream caliente para XTTS;
+  síntesis completa para motores sin streaming, documentado);
+- el PIPELINE COMPLETO end-to-end (audio de entrada -> primer audio en el
+  micrófono virtual) con cable si VB-CABLE está instalado;
+- la VRAM TOTAL a nivel driver (`vram_ocupada_mib`, incluye CTranslate2) y la
+  RAM del sistema (psutil). La foto de Whisper se toma justo tras su warm-up
+  (delta aislado); la de co-residencia, después de las síntesis.
 
 Los gates de SESIÓN (pipeline p95, OOM, memoria, artefactos, A/B, endurance)
 los mide la corrida larga del ADR-019 y se pasan por flags: sin ellos quedan
-en None = FALLA (honesto: un "go" requiere la evidencia de sesión). Con todos
-los flags, el harness PUEDE emitir un go.
+en None = FALLA. Un gate sin medición (p. ej. ruteo sin VB-CABLE instalado)
+es un FALLO, nunca un pase silencioso.
 
 Uso:
     $env:PYTHONPATH = "src"
-    python scripts/medir_gates_tts.py --warmup-audio tu_voz.wav
+    python scripts/medir_gates_tts.py --motor xtts --warmup-audio tu_voz.wav
     # + flags de sesión tras la corrida larga: --pipeline-p95 1500 --no-oom
     #   --memoria-estable --no-artefactos --voz-reconocible-ab --endurance-90min
 
-El CI NO lo ejecuta: requiere GPU + modelo + Whisper. La salida se pega como
-evidencia en el ADR-014.
+El CI NO lo ejecuta: requiere GPU + modelo + Whisper + Argos. La salida se
+pega como evidencia en el ADR-014.
 """
 
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -49,6 +56,41 @@ DELTA_WHISPER_MIN_MIB = 50.0
 # Candidato B (ADR-011): pesos de OpenVoice V2. Sobre-escribible por env para
 # reproducir la medición en otra máquina sin tocar el código.
 DIR_CHECKPOINTS_B = r"C:\Users\Kevin\deps\OpenVoice\checkpoints_v2"
+TEXTO_TRADUCCION = "Mi experiencia mas fuerte es con sistemas distribuidos."
+# Salida CORRECTA verificada: argos es→en produce basura si ARGOS_COMPUTE_TYPE
+# NO está en "default" — el wrapper del proyecto (traductor.traduccion.argos)
+# ya lo fija; el sanity guarda contra un stack genuinamente roto.
+TRADUCCION_ESPERADA = "my strongest experience is with distributed systems"
+# argos 1.11 cachea el MISMO texto (la misma frase da 0.0 ms): la medición usa
+# frases DISTINTAS, como los turnos reales del flujo.
+FRASES_TRADUCCION = (
+    "Mi experiencia mas fuerte es con sistemas distribuidos.",
+    "Trabaje con bases de datos relacionales durante cinco anios.",
+    "El proyecto mas grande que lideramos duro ocho meses.",
+    "Aprendi python en mi primer trabajo como desarrollador.",
+    "La comunicacion con el equipo fue clave para el exito.",
+    "Prefiero escribir pruebas antes que el codigo de produccion.",
+    "Nuestro equipo redujo el tiempo de despliegue a la mitad.",
+    "El cliente pidio una interfaz mas simple para los usuarios.",
+    "La documentacion tecnica debe actualizarse cada semana.",
+    "Resolvimos el problema de rendimiento con un indice nuevo.",
+    "Me gusta revisar el codigo de mis companeros con cuidado.",
+    "La entrevista de hoy es para un puesto de ingeniero senior.",
+    "El salario no es mi principal motivacion en este momento.",
+    "Estoy acostumbrado a trabajar con equipos remotos.",
+    "La empresa busca alguien con experiencia en la nube.",
+    "Mi ultimo proyecto consistio en migrar servicios antiguos.",
+    "Las reuniones diarias duran quince minutos en nuestro equipo.",
+    "Considero que el feedback honesto mejora la calidad del trabajo.",
+    "El despliegue continuo redujo los errores en produccion.",
+    "Estoy disponible para comenzar la proxima semana.",
+)
+SR_FLUJO = 24000  # sample rate del chunk del flujo (XTTS) para el ruteo
+
+
+def _normalizar(texto: str) -> str:
+    """Minúsculas, sin puntuación, espacios colapsados — para comparar salidas."""
+    return " ".join("".join(c for c in texto.lower() if c.isalnum() or c.isspace()).split())
 
 
 def _cargar_motor(motor: str) -> Any:
@@ -109,20 +151,219 @@ def _calentar_whisper_y_foto(whisper: Any, audio: Path) -> float | None:
     return vram_ocupada_mib(torch.cuda)
 
 
-def _medir_ttfa_p95(motor: Any, n: int, perfil: VoiceProfile, texto: str) -> float | None:
-    """TTFA caliente p95, con el medidor honesto (math.ceil, None si n<20)."""
-    motor.sintetizar(texto, perfil)  # warm-up
+def _medir_p95(func: Callable[[], object], n: int, etapa: str) -> float | None:
+    """n repeticiones calientes con el medidor honesto -> p95 (None si n<20)."""
+    func()  # warm-up
     registro: dict[str, list[float]] = {}
     for _ in range(n):
+        _, elapsed_ms = medir_tiempo(func, clock=time.perf_counter)
+        registro = agregar_medicion(registro, etapa, elapsed_ms)
+    return resumen_estadisticas(registro)[etapa]["p95"]
+
+
+def _medir_asr_p95(whisper: Any, audio: Path, n: int) -> float | None:
+    """ASR warm p95 (config del flujo outgoing_es_to_en: faster-whisper es)."""
+
+    def transcribir() -> object:
+        return list(whisper.transcribe(str(audio), language="es")[0])
+
+    return _medir_p95(transcribir, n, "asr")
+
+
+def _medir_traduccion_p95(n: int) -> float | None:
+    """Traducción Argos ES→EN warm p95 (frases de entrevista reales).
+
+    La etapa SOLO cuenta como medida si su salida es la correcta (sanity de
+    una frase fija): el p95 de un output corrupto no es un insumo válido del
+    presupuesto -> None (FALLA por regla). Además argos cachea el MISMO texto
+    (0.0 ms): se miden n frases DISTINTAS, como los turnos reales del flujo.
+    """
+    from traductor.traduccion.argos import traducir
+
+    salida = traducir(TEXTO_TRADUCCION, "es", "en")
+    if _normalizar(salida) != TRADUCCION_ESPERADA:
+        print(
+            f"Traducción es→en ROTA: {_normalizar(salida)[:60]!r} != "
+            f"{TRADUCCION_ESPERADA!r} — etapa no medible (FALLA por regla)"
+        )
+        return None
+    registro: dict[str, list[float]] = {}
+    for frase in FRASES_TRADUCCION[:n]:
         _, elapsed_ms = medir_tiempo(
-            partial(motor.sintetizar, texto, perfil),
+            partial(traducir, frase, "es", "en"),
             clock=time.perf_counter,
         )
-        registro = agregar_medicion(registro, "ttfa", elapsed_ms)
-    return resumen_estadisticas(registro)["ttfa"]["p95"]
+        registro = agregar_medicion(registro, "traduccion", elapsed_ms)
+    return resumen_estadisticas(registro)["traduccion"]["p95"]
+
+
+def _detectar_cable() -> str | None:
+    """Nombre del dispositivo VB-CABLE (None si no está instalado)."""
+    try:
+        import pyaudio
+    except ImportError:
+        return None
+    pa = pyaudio.PyAudio()
+    try:
+        for i in range(pa.get_device_count()):
+            info = pa.get_device_info_by_index(i)
+            nombre = str(info["name"] or "")
+            if "CABLE" in nombre:
+                return nombre
+    finally:
+        pa.terminate()
+    return None
+
+
+def _medir_ruteo_p95(n: int, cable: str | None) -> float | None:
+    """Ruteo a VB-CABLE p95: escribir un chunk de 1 s al dispositivo.
+
+    Sin cable instalado devuelve None (el gate FALLA por regla: sin medir).
+    """
+    if cable is None:
+        print("Ruteo: VB-CABLE NO instalado -> gate sin medir (FALLA por regla)")
+        return None
+    import numpy as np
+    import pyaudio
+
+    pa = pyaudio.PyAudio()
+    try:
+        indice = next(
+            i
+            for i in range(pa.get_device_count())
+            if "CABLE" in (pa.get_device_info_by_index(i)["name"] or "")
+        )
+        stream = pa.open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=SR_FLUJO,
+            output=True,
+            output_device_index=indice,
+        )
+        try:
+            tono = (np.sin(np.arange(SR_FLUJO) * 0.05) * 1000).astype(np.int16).tobytes()
+
+            def escribir() -> object:
+                stream.write(tono)
+                return None
+
+            return _medir_p95(escribir, n, "ruteo")
+        finally:
+            stream.stop_stream()
+            stream.close()
+    finally:
+        pa.terminate()
+
+
+def _latentes_xtts(motor: Any, perfil: VoiceProfile) -> tuple[Any, Any]:
+    """Latentes del perfil para inference_stream (una vez, como el flujo real)."""
+    motor.sintetizar("warm-up de carga del modelo", perfil)  # carga lazy + calienta
+    latentes = motor._tts.synthesizer.tts_model.get_conditioning_latents(
+        audio_path=list(perfil.muestras)
+    )
+    return (latentes[0], latentes[1])
+
+
+def _primer_chunk_xtts(motor: Any, texto: str, latentes: tuple[Any, Any]) -> Any:
+    """Primer chunk reproducible de inference_stream (TTFA, definición corregida)."""
+    gpt, spk = latentes
+    generador = motor._tts.synthesizer.tts_model.inference_stream(texto, "en", gpt, spk)
+    return next(generador)
+
+
+def _chunk_a_pcm16(chunk: Any) -> bytes:
+    """Chunk (numpy/torch float32) -> bytes int16 24 kHz para el cable."""
+    import numpy as np
+    import torch
+
+    if torch.is_tensor(chunk):
+        chunk = chunk.detach().cpu().numpy()
+    pcm = np.asarray(chunk, dtype=np.float32)
+    return (np.clip(pcm, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
+
+
+def _medir_ttfa_primer_chunk_p95(
+    motor: Any,
+    n: int,
+    perfil: VoiceProfile,
+    texto: str,
+    latentes: tuple[Any, Any] | None,
+) -> float | None:
+    """TTFA caliente p95 = PRIMER CHUNK reproducible (n>=20).
+
+    Con latentes (XTTS): primer chunk de `inference_stream`. Sin streaming
+    (candidato B): primer chunk = síntesis completa, documentado en ADR-014.
+    """
+    if latentes is None:
+        return _medir_p95(partial(motor.sintetizar, texto, perfil), n, "ttfa")
+    return _medir_p95(partial(_primer_chunk_xtts, motor, texto, latentes), n, "ttfa")
+
+
+def _medir_pipeline_p95(
+    whisper: Any,
+    motor: Any,
+    n: int,
+    audio: Path,
+    perfil: VoiceProfile,
+    latentes: tuple[Any, Any] | None,
+    cable: str | None,
+) -> tuple[float | None, bool]:
+    """Pipeline end-to-end p95: audio -> ASR es -> Argos -> 1er chunk -> cable.
+
+    Devuelve (p95, incluye_ruteo). Con VB-CABLE el chunk se escribe al
+    micrófono virtual (el número es el gate). Sin cable: mide la cadena hasta
+    el primer chunk — informativo; el gate queda sin medir (FALLA por regla)
+    porque el salto real no existe en esta máquina.
+    """
+    from traductor.traduccion.argos import traducir
+
+    pa: Any = None
+    stream: Any = None
+    if cable is not None:
+        import pyaudio
+
+        pa = pyaudio.PyAudio()
+        indice = next(
+            i
+            for i in range(pa.get_device_count())
+            if "CABLE" in (pa.get_device_info_by_index(i)["name"] or "")
+        )
+        stream = pa.open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=SR_FLUJO,
+            output=True,
+            output_device_index=indice,
+        )
+    try:
+
+        def una_iteracion() -> object:
+            segmentos = list(whisper.transcribe(str(audio), language="es")[0])
+            texto_es = " ".join(s.text for s in segmentos)
+            texto_en = traducir(texto_es, "es", "en")
+            if latentes is not None:
+                chunk = _primer_chunk_xtts(motor, texto_en, latentes)
+            else:
+                chunk = motor.sintetizar(texto_en, perfil)
+            if stream is not None:
+                stream.write(_chunk_a_pcm16(chunk))
+            return chunk
+
+        p95 = _medir_p95(una_iteracion, n, "pipeline")
+        return p95, stream is not None
+    finally:
+        if stream is not None:
+            stream.stop_stream()
+            stream.close()
+        if pa is not None:
+            pa.terminate()
 
 
 def main(argv: list[str] | None = None) -> None:
+    import sys
+
+    if hasattr(sys.stdout, "reconfigure"):  # prints con → en consolas cp1252
+        sys.stdout.reconfigure(encoding="utf-8")
     import torch
 
     args = parser_harness().parse_args(argv)
@@ -144,18 +385,48 @@ def main(argv: list[str] | None = None) -> None:
                 f"{DELTA_WHISPER_MIN_MIB:g}): el warm-up no ejercitó CT2; "
                 "instrumento no fiable."
             )
-    ttfa = _medir_ttfa_p95(motor, N_REPETICIONES, perfil, args.texto)
-    # Foto de co-residencia DESPUÉS de las síntesis TTFA: Whisper + motor con
-    # sus reservas reales. Es el número del gate.
+    latentes: tuple[Any, Any] | None = None
+    if args.motor == "xtts":
+        latentes = _latentes_xtts(motor, perfil)  # carga el modelo (lazy)
+    asr = _medir_asr_p95(whisper, args.warmup_audio, N_REPETICIONES)
+    traduccion = _medir_traduccion_p95(N_REPETICIONES)
+    cable = _detectar_cable()
+    ruteo = _medir_ruteo_p95(N_REPETICIONES, cable)
+    ttfa = _medir_ttfa_primer_chunk_p95(motor, N_REPETICIONES, perfil, args.texto, latentes)
+    if traduccion is None or cable is None:
+        print(
+            "Pipeline end-to-end: sin medir (VB-CABLE ausente o traducción "
+            "rota — no se mide la cadena sin micrófono virtual ni con basura)"
+        )
+        pipeline, con_ruteo = None, False
+    else:
+        pipeline, con_ruteo = _medir_pipeline_p95(
+            whisper, motor, N_REPETICIONES, args.warmup_audio, perfil, latentes, cable
+        )
+    pipeline_gate = pipeline if con_ruteo else None
+    # Foto de co-residencia DESPUÉS de las síntesis: Whisper + motor con sus
+    # reservas reales. Es el número del gate.
     vram = vram_ocupada_mib(torch.cuda)
     ram = medir_ram_mib()
     del whisper, motor  # liberar DESPUÉS de la foto, no antes
-    medicion = componer_medicion(ttfa, vram, ram, args)
+    medicion = componer_medicion(ttfa, asr, traduccion, ruteo, pipeline_gate, vram, ram, args)
     resultados = evaluar_gates(medicion)
+    print(f"ASR warm p95 (faster-whisper es): {asr:.1f} ms" if asr else "ASR: sin medir")
+    print(f"Traducción Argos p95: {traduccion:.1f} ms" if traduccion else "Traducción: sin medir")
+    print(f"Ruteo VB-CABLE p95: {ruteo:.1f} ms" if ruteo else "Ruteo: sin medir")
     if ttfa is None:
-        print(f"TTFA caliente p95: sin medir (n<{N_REPETICIONES})")
+        print(f"TTFA 1er chunk p95: sin medir (n<{N_REPETICIONES})")
     else:
-        print(f"TTFA caliente p95: {ttfa:.1f} ms")
+        print(f"TTFA 1er chunk p95: {ttfa:.1f} ms (streaming caliente)")
+    if pipeline is None:
+        print("Pipeline end-to-end p95: sin medir")
+    elif con_ruteo:
+        print(f"Pipeline end-to-end p95 (con ruteo al cable): {pipeline:.1f} ms")
+    else:
+        print(
+            f"Pipeline p95 SIN ruteo (VB-CABLE ausente, informativo): {pipeline:.1f} ms — "
+            "el gate queda sin medir -> FALLA por regla"
+        )
     if vram is None:
         print("VRAM co-residente: sin medir (sin CUDA)")
     else:

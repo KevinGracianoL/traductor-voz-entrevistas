@@ -189,7 +189,7 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 | 011 | **XTTS-v2 primario (fork coqui-tts)** | [ADR-011](docs/ADR-011-contratos-neutrales-tts.md): CPML declarado (uso personal no comercial); Supertonic+OpenVoice V2 como B; Pocket descartado |
 | 012 | **Benchmark ASR bidireccional** | [ADR-012](docs/ADR-012-benchmark-asr.md): Moonshine Small CPU vs faster-whisper Small GPU; WER normalizado + p50/p95 |
 | 013 | **Worker TTS aislado + enrolamiento** | [ADR-013](docs/ADR-013-worker-tts-enrolamiento.md): jobs JSON-line, frontera de entrada, tienda local |
-| 014 | **Gates de aceptación del motor** | [ADR-014](docs/ADR-014-gates-aceptacion-tts.md): TTFA<400 ms, VRAM<3,2 GB, RAM<18 GB, sin OOM/artefactos, endurance 90 min |
+| 014 | **Gates de aceptación del motor** | [ADR-014](docs/ADR-014-gates-aceptacion-tts.md): TTFA derivado de etapas medidas (2000 ms − ASR − traducción − ruteo), VRAM<3,2 GB, RAM<18 GB, sin OOM/artefactos, endurance 90 min |
 | 015 | **Arquitectura por flujos y escalera** | [ADR-015](docs/ADR-015-arquitectura-flujos-escalera.md): outgoing/incoming, colas de tamaño 1, validación de artefactos, 4 niveles |
 
 ---
@@ -206,7 +206,7 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 - [x] **Fase 2c — Benchmark ASR** — WER + p50/p95: faster-whisper vs moonshine (ADR-012, Propuesto)
 - [x] **Fase 2d — Worker TTS + enrolamiento** — worker aislado + tienda JSON (ADR-013, Propuesto)
 - [x] **Fase 2e — Gates TTS** — 9 gates del go/no-go: TTFA, VRAM, RAM, pipeline, OOM, memoria, artefactos, A/B, endurance (ADR-014, Propuesto)
-- [x] **Fase 2f — Go/no-go del motor TTS** — XTTS-v2 **rechazado** por TTFA (3574 ms y 655–889 ms primer chunk vs < 400 ms) y candidato B (Supertonic 3 + OpenVoice V2) **rechazado** por TTFA (7885.8 ms) — evidencia y números en [ADR-014](docs/ADR-014-gates-aceptacion-tts.md)
+- [x] **Fase 2f — Go/no-go del motor TTS** — XTTS-v2 **rechazado por un gate mal especificado** (sub-presupuesto de 400 ms nunca validado contra el total; corrección 2026-09-09 en [ADR-014](docs/ADR-014-gates-aceptacion-tts.md): presupuesto DERIVADO de etapas medidas, TTFA = primer chunk n≥20 = 691.1 ms; ASR 768.5 ms y traducción 176.6 ms medidos; ruteo y pipeline sin medir por VB-CABLE ausente → XTTS sin aprobar, no rechazado) y candidato B (Supertonic 3 + OpenVoice V2) **rechazado** por TTFA arquitectural (7885.8 ms)
 - [ ] **Fase 2g — Motor TTS que pase los gates** — **ningún motor pasa hoy**: ni los clones (XTTS ✗, B ✗, Pocket descartado) ni la voz genérica Supertonic sola (~1.75 s por fragmento > 400 ms); este ítem rastrea el hueco y el flujo arranca por la escalera del ADR-015 (nivel 3: voz genérica + subtítulos)
 - [ ] **Fase 3 — Conversión de voz** — timbre de Kevin (condicionada a un motor que pase los gates del ADR-014, Fase 2g)
 
