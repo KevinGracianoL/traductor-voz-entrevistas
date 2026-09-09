@@ -32,6 +32,13 @@ def test_parser_rechaza_wav_inexistente(tmp_path: Path, capsys: pytest.CaptureFi
     assert "el WAV de warm-up no existe" in capsys.readouterr().err
 
 
+def test_parser_rechaza_referencia_inexistente(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit):
+        parser_harness().parse_args(
+            ["--warmup-audio", str(_wav(tmp_path)), "--referencia", str(tmp_path / "no.wav")]
+        )
+
+
 def test_parser_help_explica_flags() -> None:
     """Los helps de cada flag son los exactos (mata los mutantes de string)."""
     parser = parser_harness()

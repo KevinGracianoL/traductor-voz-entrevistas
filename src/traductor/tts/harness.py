@@ -39,7 +39,6 @@ def parser_harness() -> argparse.ArgumentParser:
     parser.add_argument(
         "--referencia",
         type=_wav_existente,
-        default=None,
         help="Muestras de referencia para el perfil TTS (default: --warmup-audio)",
     )
     parser.add_argument(
