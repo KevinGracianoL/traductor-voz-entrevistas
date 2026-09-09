@@ -6,6 +6,7 @@ cualquier `TTSBackend` en su propio proceso.
 """
 
 from traductor.tts.backend import TTSBackend
+from traductor.tts.backend_xtts import MODELO_XTTS, BackendXtts
 from traductor.tts.enrolamiento import enrolar
 from traductor.tts.gates import (
     GateResultado,
@@ -22,8 +23,10 @@ from traductor.tts.worker import main as main_worker
 
 __all__ = [
     "AudioResult",
+    "BackendXtts",
     "GateResultado",
     "Job",
+    "MODELO_XTTS",
     "MedicionTts",
     "Salud",
     "TTSBackend",

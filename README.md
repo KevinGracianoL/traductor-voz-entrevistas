@@ -60,12 +60,12 @@ flowchart LR
 | ¿Legible y sin bugs? | **ruff** | `select = ["E","F","B","SIM","UP","I","S"]` |
 | ¿Los tipos encajan? | **mypy --strict** | errores de tipo = CI rojo |
 | ¿Hace lo que dice? | **pytest** | `--cov-fail-under=90` |
-| ¿Qué no probé? | **coverage** | **100 %** (611 stmts, 0 sin cubrir) |
+| ¿Qué no probé? | **coverage** | **100 %** (674 stmts, 0 sin cubrir) |
 | ¿Detectaría un bug? | **mutmut** | **0 supervivientes** — el gate CI falla si `survived > 0` |
 
 > `mutmut` muta tu código a propósito (cambia `<=`→`<`, `*1000`→`/1000`, borra branches…) y exige que **alguien** lo detecte. El gate CI falla si `survived > 0`. Se verificó a mano rompiendo el código y viendo el gate rechazarlo.
 >
-> **191 tests** cubren el happy path **y** los modos de fallo: locks de antivirus, escrituras truncadas, `.tmp` huérfanos, rutas Windows con backslash/apóstrofo.
+> **214 tests** cubren el happy path **y** los modos de fallo: locks de antivirus, escrituras truncadas, `.tmp` huérfanos, rutas Windows con backslash/apóstrofo.
 
 ---
 
@@ -158,14 +158,15 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 │   │   ├── tienda_json.py      # store real: un JSON por perfil (ADR-013)
 │   │   ├── enrolamiento.py     # muestras → VoiceProfile validado (ADR-013)
 │   │   ├── worker.py           # worker aislado: jobs JSON-line (ADR-013)
-│   │   └── gates.py            # aceptación TTS: TTFA p95 + VRAM (ADR-014)
+│   │   ├── gates.py            # go/no-go: 9 gates del motor (ADR-014)
+│   │   └── backend_xtts.py     # XTTS-v2 vía fork coqui-tts (ADR-011)
 │   └── latencia/
 │       ├── presupuesto.py      # ¿cabe? ¿quién es más lento?
 │       └── medidor.py          # reloj inyectable, p50/p95 honesto
 ├── scripts/                    # wrappers finos: hardware, traducción
 ├── setup_dlls.py               # CUDA 12/13 coexistiendo (Windows, locks AV)
 ├── docs/                       # ADRs + evidencia smoke Windows
-├── tests/                      # 191 tests, 100 % cov, mutantes en CI
+├── tests/                      # 214 tests, 100 % cov, mutantes en CI
 └── .github/workflows/ci.yml    # 5 gates que fallan el PR si algo se rompe
 ```
 
@@ -185,6 +186,11 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 | 008 | Fallback automático | Una entrevista no es un log |
 | 009 | Dirección por fuente | Determinista, 0 ms, sin detector que falle en code-switching |
 | 010 | **Chatterbox rechazado como TTS** | [ADR-010](docs/ADR-010-chatterbox-rechazado.md): 17,4 s warm / 3,6 GB **medidos** en esta GPU, sin co-residencia con Whisper |
+| 011 | **XTTS-v2 primario (fork coqui-tts)** | [ADR-011](docs/ADR-011-contratos-neutrales-tts.md): CPML declarado (uso personal no comercial); Supertonic+OpenVoice V2 como B; Pocket descartado |
+| 012 | **Benchmark ASR bidireccional** | [ADR-012](docs/ADR-012-benchmark-asr.md): Moonshine Small CPU vs faster-whisper Small GPU; WER normalizado + p50/p95 |
+| 013 | **Worker TTS aislado + enrolamiento** | [ADR-013](docs/ADR-013-worker-tts-enrolamiento.md): jobs JSON-line, frontera de entrada, tienda local |
+| 014 | **Gates de aceptación del motor** | [ADR-014](docs/ADR-014-gates-aceptacion-tts.md): TTFA<400 ms, VRAM<3,2 GB, RAM<18 GB, sin OOM/artefactos, endurance 90 min |
+| 015 | **Arquitectura por flujos y escalera** | [ADR-015](docs/ADR-015-arquitectura-flujos-escalera.md): outgoing/incoming, colas de tamaño 1, validación de artefactos, 4 niveles |
 
 ---
 
@@ -199,8 +205,8 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 - [x] **Fase 2b — Contratos TTS** — `VoiceProfile`/`VoiceProfileStore`/`TTSBackend` (ADR-011, Propuesto)
 - [x] **Fase 2c — Benchmark ASR** — WER + p50/p95: faster-whisper vs moonshine (ADR-012, Propuesto)
 - [x] **Fase 2d — Worker TTS + enrolamiento** — worker aislado + tienda JSON (ADR-013, Propuesto)
-- [x] **Fase 2e — Gates TTS** — TTFA caliente p95 < 400 ms + VRAM < 3.2 GB (ADR-014, Propuesto)
-- [ ] **Fase 2f — TTS** — motor real contra los contratos y los gates (candidato apache-2.0)
+- [x] **Fase 2e — Gates TTS** — 9 gates del go/no-go: TTFA, VRAM, RAM, pipeline, OOM, memoria, artefactos, A/B, endurance (ADR-014, Propuesto)
+- [ ] **Fase 2f — Go/no-go XTTS** — corrida real del candidato primario (fork coqui-tts) contra los gates; si falla → Supertonic+OpenVoice V2
 - [ ] **Fase 3 — Conversión de voz** — timbre de Kevin
 
 ---
@@ -212,6 +218,9 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 *Privacidad por diseño: cero audios de entrevistas reales y cero credenciales en el historial del repo.*
 
 </div>
+
+
+
 
 
 

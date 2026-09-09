@@ -2,7 +2,8 @@
 
 - **Estado:** Propuesto (2026-09-08) — metodología y harness listos (PR #13); **medición pendiente en la máquina objetivo**.
 - **Contexto:** el pipeline necesita transcripción en las dos direcciones: la que se escucha (EN→ES, subtítulos) y la que se habla (ES→EN, para traducir). Hoy el tubo usa RealtimeSTT (faster-whisper tiny int8). Antes de fijar el motor hay que medir en la GPU real (GTX 1650 Ti 4 GB, presupuesto ADR-003), no en benchmarks de otra gente: mismo criterio que ADR-010.
-- **Candidatos a medir:** `faster-whisper` (tiny, int8/FP16, ya en el venv) vs `moonshine` (tiny/base, ONNX, útil para on-device). RealtimeSTT **no se borra** hasta que un ADR fije el ganador.
+- **Candidatos a medir (decisión de arquitectura, PR #16):** **Moonshine Small ES/EN INT8 en CPU** para ambas direcciones (la que se habla y la que se escucha) + **faster-whisper Small multilingüe en GPU** solo como comparación del benchmark (si Small no es estable, faster-whisper Base). RealtimeSTT **no se borra** hasta que un ADR fije el ganador. **No usar WhisperX en la ruta en vivo.**
+- **Corpus de aceptación (por separado, no un solo promedio):** español colombiano espontáneo; inglés de entrevista; términos técnicos; audio con ruido; cold start y warm; p50/p95; **CPU, RAM y VRAM**; omisiones, sustituciones y **alucinaciones** (WER cubre las dos primeras como ediciones; las alucinaciones se miden aparte).
 - **Decisión propuesta:** decidir el motor con un benchmark reproducible por idioma (es/en) y motor, con dos métricas:
 
   - **WER** (`traductor.asr.wer`): precisión de la transcripción contra una referencia (ground truth), normalizada por palabras.
