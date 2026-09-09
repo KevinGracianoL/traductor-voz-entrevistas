@@ -12,11 +12,18 @@ from pathlib import Path
 import pytest
 
 from traductor.tts.gates import cabe_en_gates
-from traductor.tts.harness import _bytes_a_mib, componer_medicion, medir_ram_mib, parser_harness
+from traductor.tts.harness import (
+    TEXTO_POR_DEFECTO,
+    _bytes_a_mib,
+    componer_medicion,
+    medir_ram_mib,
+    parser_harness,
+    perfil_benchmark,
+)
 
 
-def _wav(tmp_path: Path) -> Path:
-    wav = tmp_path / "voz.wav"
+def _wav(tmp_path: Path, nombre: str = "voz.wav") -> Path:
+    wav = tmp_path / nombre
     wav.write_bytes(b"RIFF")
     return wav
 
@@ -42,6 +49,55 @@ def test_parser_rechaza_referencia_inexistente(
     assert "el WAV de referencia no existe" in capsys.readouterr().err
 
 
+def test_referencia_acepta_varias_muestras(tmp_path: Path) -> None:
+    a = _wav(tmp_path, "a.wav")
+    b = _wav(tmp_path, "b.wav")
+    args = parser_harness().parse_args(
+        ["--warmup-audio", str(_wav(tmp_path)), "--referencia", str(a), str(b)]
+    )
+    assert args.referencia == [a, b]
+
+
+def test_motor_por_defecto_xtts_y_opcion_b(tmp_path: Path) -> None:
+    args = parser_harness().parse_args(["--warmup-audio", str(_wav(tmp_path))])
+    assert args.motor == "xtts"
+    args = parser_harness().parse_args(["--warmup-audio", str(_wav(tmp_path)), "--motor", "b"])
+    assert args.motor == "b"
+    with pytest.raises(SystemExit):
+        parser_harness().parse_args(["--warmup-audio", str(_wav(tmp_path)), "--motor", "nope"])
+
+
+def test_motor_choices_y_nargs_de_referencia(tmp_path: Path) -> None:
+    """Los valores de argparse exactos (mata los mutantes de choices/nargs)."""
+    parser = parser_harness()
+    acciones = {a.dest: a for a in parser._actions}
+    assert acciones["motor"].choices == ("xtts", "b")
+    assert acciones["referencia"].nargs == "+"
+
+
+def test_texto_por_defecto_y_personalizado(tmp_path: Path) -> None:
+    args = parser_harness().parse_args(["--warmup-audio", str(_wav(tmp_path))])
+    assert args.texto == TEXTO_POR_DEFECTO
+    args = parser_harness().parse_args(
+        ["--warmup-audio", str(_wav(tmp_path)), "--texto", "Thank you."]
+    )
+    assert args.texto == "Thank you."
+
+
+def test_perfil_benchmark_usa_referencia_o_warmup(tmp_path: Path) -> None:
+    a = _wav(tmp_path, "a.wav")
+    b = _wav(tmp_path, "b.wav")
+    args = parser_harness().parse_args(
+        ["--warmup-audio", str(_wav(tmp_path)), "--referencia", str(a), str(b)]
+    )
+    perfil = perfil_benchmark(args)
+    assert perfil.id == "benchmark"
+    assert perfil.nombre == "Benchmark"
+    assert perfil.muestras == (str(a), str(b))
+    args = parser_harness().parse_args(["--warmup-audio", str(_wav(tmp_path))])
+    assert perfil_benchmark(args).muestras == (str(args.warmup_audio),)
+
+
 def test_parser_help_explica_flags() -> None:
     """Los helps de cada flag son los exactos (mata los mutantes de string)."""
     parser = parser_harness()
@@ -51,7 +107,13 @@ def test_parser_help_explica_flags() -> None:
         "decoder ejercitado la VRAM subestima y el harness hace raise)"
     )
     assert helps["referencia"] == (
-        "Muestras de referencia para el perfil TTS (default: --warmup-audio)"
+        "Muestras de referencia (1 o más) para el perfil TTS (default: --warmup-audio)"
+    )
+    assert helps["motor"] == (
+        "Candidato a medir: xtts (primario ADR-011) o b (Supertonic 3 + OpenVoice V2)"
+    )
+    assert helps["texto"] == (
+        "Texto sintetizado en cada repetición (la salida del flujo ES→EN es inglés)"
     )
     assert helps["pipeline_p95"] == "Pipeline warm p95 en ms, de la corrida de flujo (ADR-015)"
     assert helps["oom"] == "la corrida larga registró OOM (True = FALLA)"
