@@ -1,4 +1,4 @@
-﻿# ADR-015 - Arquitectura por flujos y escalera de presupuesto (Propuesto)
+# ADR-015 - Arquitectura por flujos y escalera de presupuesto (Propuesto)
 
 - **Estado:** Propuesto (2026-09-08) — dirección de arquitectura decidida (decisión de Hal, PR #16); implementación en los PRs de flujo (#17+).
 - **Contexto:** el prototipo lineal (audio → VAD → ASR → traducción → TTS → audio) no distingue las dos direcciones reales de la llamada, ni protege contra el artefacto que sale al micrófono virtual. La decisión de producción: **el requisito importante es que la otra persona oiga la VOZ de Kevin hablando inglés**; la voz del entrevistador en español arranca por subtítulos y el clon dinámico es opcional.

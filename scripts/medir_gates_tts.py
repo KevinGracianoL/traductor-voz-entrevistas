@@ -328,7 +328,7 @@ def _medir_ruteo_p95(n: int, cable: str | None) -> float | None:
                         indice = _primer_audio_index(datos)
                         if indice is not None:
                             elapsed = (time.perf_counter() - t0) * 1000.0
-                            return elapsed - indice / RATE_CABLE * 1000.0
+                            return elapsed - (indice // 2) / RATE_CABLE * 1000.0
                 raise RuntimeError(
                     "no se detectó el primer sample en CABLE Output: instrumento roto"
                 )
@@ -404,20 +404,20 @@ def _medir_ttfa_primer_chunk_p95(
 
 
 def _ventanas_pipeline(whisper: Any, muestras: np.ndarray, sr: int) -> list[np.ndarray]:
-    """Ventanas de 3 s DERIVADAS de la segmentación VAD real de la grabación.
+    """Ventanas = los SEGMENTOS VAD completos de la grabación (inicio Y fin).
 
     Criterio (corrección del PR #20, revisión del usuario): el conjunto sale
-    de los INICIOS de los segmentos VAD del corpus (0, 4.66 y 10.04 en esta
-    grabación), NO de la latencia medida. NINGUNA ventana se descarta por su
-    resultado: si una ventana derivada resultara lenta, se reporta (riesgo
+    de la segmentación VAD real del corpus — cada ventana es el segmento
+    [s.start, s.end] COMPLETO, sin fijar 3 s ni ignorar s.end (el flujo
+    transcribe el segmento entero, no un trozo). NINGUNA ventana se descarta
+    por su resultado: si un segmento resultara lento, se reporta (riesgo
     abierto del decodificador, documentado en ADR-014 — no se excluye).
     """
     segmentos, _ = whisper.transcribe(muestras, language="es")
-    inicios_s = [float(s.start) for s in segmentos]
     ventanas: list[np.ndarray] = []
-    for inicio in inicios_s:
-        a = int(inicio * sr)
-        b = min(a + int(3.0 * sr), len(muestras))
+    for s in segmentos:
+        a = int(s.start * sr)
+        b = min(int(s.end * sr), len(muestras))
         ventanas.append(np.asarray(muestras[a:b]))
     return ventanas
 
@@ -495,7 +495,7 @@ def _medir_pipeline_p95(
                 )
                 indice = _primer_audio_index(datos)
                 if indice is not None:
-                    return (time.perf_counter() - t0) * 1000.0 - indice / RATE_CABLE * 1000.0
+                    return (time.perf_counter() - t0) * 1000.0 - (indice // 2) / RATE_CABLE * 1000.0
             return -1.0  # aún no llegó señal
 
         def una_iteracion(i: int) -> tuple[object, RegistroEtapas]:
