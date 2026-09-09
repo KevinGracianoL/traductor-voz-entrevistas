@@ -279,7 +279,7 @@ def _chunk_a_pcm16(chunk: Any) -> bytes:
     if torch.is_tensor(chunk):
         chunk = chunk.detach().cpu().numpy()
     pcm = np.asarray(chunk, dtype=np.float32)
-    return (np.clip(pcm, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
+    return bytes((np.clip(pcm, -1.0, 1.0) * 32767).astype(np.int16).tobytes())
 
 
 def _medir_ttfa_primer_chunk_p95(
