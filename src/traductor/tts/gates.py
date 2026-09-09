@@ -101,7 +101,7 @@ def _gate_numerico(
     valor: float | None,
     maximo: float,
     unidad: str,
-    divisor: float = 1.0,
+    divisor: float,
 ) -> GateResultado:
     limite = f"< {maximo / divisor:g} {unidad}"
     if valor is None:
