@@ -37,6 +37,12 @@ def parser_harness() -> argparse.ArgumentParser:
         "decoder ejercitado la VRAM subestima y el harness hace raise)",
     )
     parser.add_argument(
+        "--referencia",
+        type=_wav_existente,
+        default=None,
+        help="Muestras de referencia para el perfil TTS (default: --warmup-audio)",
+    )
+    parser.add_argument(
         "--pipeline-p95",
         type=float,
         help="Pipeline warm p95 en ms, de la corrida de flujo (ADR-015)",
