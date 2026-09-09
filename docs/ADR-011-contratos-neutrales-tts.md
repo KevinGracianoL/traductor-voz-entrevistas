@@ -1,6 +1,6 @@
-# ADR-011 - Contratos neutrales de TTS (Propuesto)
+# ADR-011 - Contratos neutrales de TTS
 
-- **Estado:** Propuesto (2026-09-08) — se aprueba cuando un backend real lo implemente sin forzar cambios de contrato; el candidato primario (XTTS-v2) se decide por los gates del ADR-014, no aquí.
+- **Estado:** **cadena de candidatos agotada (2026-09-09)** — XTTS-v2 RECHAZADO con el pipeline end-to-end medido (2756.4 ms > 2000 ms, ADR-014), candidato B (Supertonic 3 + OpenVoice V2) RECHAZADO por razón arquitectural (7885.8 ms, sin streaming), Pocket descartado. Los contratos quedan como la interfaz intercambiable: el flujo (ADR-015) arranca por la escalera (nivel 3: voz genérica + subtítulos, o nivel 4) y cualquier motor futuro que pase los gates del ADR-014 se inyecta sin reconstruir.
 - **Contexto:** Fase 2 necesita **clonación de voz cross-lingual en tiempo real** (timbre de Kevin, ES→EN) que conviva con el ASR en una GTX 1650 Ti de 4 GB, dentro del presupuesto ADR-003. Chatterbox fue rechazado con mediciones (ADR-010). "Cero artefactos" no es garantizable con ningún clonador neuronal: se impide que un audio defectuoso llegue a la llamada con validación y degradación automática (ADR-015), no con promesas.
 - **Cadena de candidatos (decisión del proyecto, argumentada):**
   1. **XTTS-v2 como candidato PRIMARIO**, vía el fork mantenido **`coqui-tts`** (idiap/coqui-ai-TTS), en su **propio venv y proceso persistente** (ADR-013). Clonación cross-lingual, ES/EN, varias referencias por hablante, caché de `speaker_embedding`/`gpt_cond_latent`, salida en streaming. Argumentación: es el candidato con clonación cross-lingual real y soporte de streaming; su licencia de pesos (CPML, no comercial) es aceptable porque este proyecto es de **uso personal, no comercial** — la licencia no se silencia, se declara. **La objeción de VRAM (estimación de 4–6 GB él solo) no se borra: se convierte en el gate del ADR-014 (VRAM co-residente < 3.2 GB) y es el PRIMER smoke a correr** (5 min, solo el gate de VRAM) antes de montar el venv completo — es el gate que más probablemente lo tumbe en esta GPU de 4 GB. Si no pasa los gates → se rechaza, sin cuantización agresiva que empeore la voz.
@@ -17,6 +17,6 @@
 
 - **Por qué `sintetizar(texto, perfil)` y no un backend atado a un perfil:** el perfil viaja explícito en cada llamada; el caller decide qué voz usar sin que el contrato esconda estado global. El costo (re-resolución del perfil por llamada) lo paga la implementación, no el contrato.
 - **Consecuencias:**
-  - Los fakes de los tests prueban que el contrato es satisfacible; el motor real (XTTS-v2 o B) se inyecta y se decide con los gates del ADR-014.
-  - Si el backend obliga a cambiar una firma, se cambia aquí con su propio ADR, antes de que haya integraciones que migrar.
+  - Los fakes de los tests prueban que el contrato es satisfacible; el motor real (XTTS-v2 o B) se inyecta y se decide con los gates del ADR-014 — **decidido: ninguno pasa** (evidencia completa en ADR-014, incl. pipeline end-to-end 2756.4 ms de XTTS).
   - La dirección EN→ES (escuchar) arranca por **subtítulos**; el clon de la voz del entrevistador es opcional y solo se habilita si las muestras recogidas pasan los controles (ADR-015). Estos contratos cubren ES→EN (hablar) primero.
+  - La clonación de la voz de Kevin (Fase 3 del roadmap) queda **condicionada a un motor que pase los gates** (Fase 2g); la optimización propuesta para re-abrir XTTS: ASR primero (762 ms vs 300 ms supuestos), no el TTS.

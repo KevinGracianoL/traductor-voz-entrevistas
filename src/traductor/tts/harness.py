@@ -62,6 +62,21 @@ def parser_harness() -> argparse.ArgumentParser:
         help="Texto sintetizado en cada repetición (la salida del flujo ES→EN es inglés)",
     )
     parser.add_argument(
+        "--asr-p95",
+        type=float,
+        help="ASR warm p95 en ms, MEDIDO en el hardware (presupuesto TTFA derivado)",
+    )
+    parser.add_argument(
+        "--traduccion-p95",
+        type=float,
+        help="Traducción Argos p95 en ms, MEDIDA (presupuesto TTFA derivado)",
+    )
+    parser.add_argument(
+        "--ruteo-p95",
+        type=float,
+        help="Ruteo a VB-CABLE p95 en ms, MEDIDO (presupuesto TTFA derivado)",
+    )
+    parser.add_argument(
         "--pipeline-p95",
         type=float,
         help="Pipeline warm p95 en ms, de la corrida de flujo (ADR-015)",
@@ -83,16 +98,27 @@ def parser_harness() -> argparse.ArgumentParser:
 
 def componer_medicion(
     ttfa: float | None,
+    asr: float | None,
+    traduccion: float | None,
+    ruteo: float | None,
+    pipeline: float | None,
     vram: float | None,
     ram: float | None,
     args: argparse.Namespace,
 ) -> MedicionTts:
-    """Une lo medido (TTFA/VRAM/RAM) con lo reportado de sesión en la medición."""
+    """Une lo medido (TTFA/etapas/pipeline/VRAM/RAM) con lo reportado de sesión.
+
+    El pipeline MEDIDO gana sobre `--pipeline-p95` (el flag queda para la
+    corrida de sesión del ADR-019); los flags de sesión van tal cual.
+    """
     return MedicionTts(
         ttfa_caliente_p95_ms=ttfa,
+        asr_p95_ms=asr,
+        traduccion_p95_ms=traduccion,
+        ruteo_p95_ms=ruteo,
         vram_mib=vram,
         ram_mib=ram,
-        pipeline_p95_ms=args.pipeline_p95,
+        pipeline_p95_ms=args.pipeline_p95 if pipeline is None else pipeline,
         oom=args.oom,
         memoria_estable=args.memoria_estable,
         artefactos=args.artefactos,
@@ -125,3 +151,30 @@ def medir_ram_mib() -> float | None:
     except ImportError:
         return None
     return _bytes_a_mib(psutil.virtual_memory().used)  # pragma: no cover - máquina
+
+
+def piso_ruteo_ms(frames: int, sample_rate: int) -> float:
+    """Tiempo físico mínimo para que un buffer drene al sample rate (ms).
+
+    Un buffer de `frames` muestras a `sample_rate` Hz no puede reproducirse
+    más rápido que en `frames / sample_rate` segundos: cualquier medición de
+    ruteo por debajo de esto significa que la escritura solo fue ACEPTADA por
+    el buffer del dispositivo, no que el audio fuera reproducible.
+    """
+    return frames / sample_rate * 1000.0
+
+
+def verificar_piso_ruteo(p95_ms: float | None, frames: int, sample_rate: int) -> None:
+    """Auto-verificación del instrumento de ruteo (patrón delta VRAM de Whisper).
+
+    Un p95 por debajo del piso físico es un instrumento roto, no un resultado
+    bueno: la escritura retornó antes de que el audio pudiera reproducirse.
+    Raises: RuntimeError con el número medido y el piso.
+    """
+    piso = piso_ruteo_ms(frames, sample_rate)
+    if p95_ms is None or p95_ms < piso:
+        raise RuntimeError(
+            f"p95 de ruteo {p95_ms} ms < piso físico {piso:g} ms "
+            f"({frames} frames a {sample_rate} Hz): la escritura solo fue "
+            "aceptada por el buffer, no reproducida. Instrumento roto."
+        )

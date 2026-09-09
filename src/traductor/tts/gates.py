@@ -3,7 +3,11 @@
 Criterios escritos para aceptar un candidato (ADR-011: XTTS-v2 primario vía
 fork coqui-tts; Supertonic+OpenVoice V2 como candidato B), medidos en la
 máquina objetivo con el ASR co-residente:
-- TTFA (time to first audio) caliente p95 < 400 ms.
+- TTFA (time to first audio = PRIMER CHUNK reproducible) caliente p95 <
+  presupuesto DERIVADO: 2000 ms end-to-end − (ASR p95 + traducción p95 +
+  ruteo p95), cada etapa MEDIDA en el hardware. El 400 ms literal del ADR
+  original era un sub-presupuesto inventado (corrección documentada en el
+  ADR-014).
 - VRAM total < 3.2 GB (3276.8 MiB).
 - RAM total < 18 GB (18432 MiB).
 - Pipeline warm p95 < 2 s.
@@ -18,10 +22,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-TTFA_MS_MAX = 400.0
 VRAM_MIB_MAX = 3.2 * 1024
 RAM_MIB_MAX = 18 * 1024
 PIPELINE_MS_MAX = 2000.0
+
+
+def derivar_presupuesto_ttfa(
+    asr_p95_ms: float | None,
+    traduccion_p95_ms: float | None,
+    ruteo_p95_ms: float | None,
+) -> float | None:
+    """Presupuesto de TTFA DERIVADO, nunca literal: 2000 ms − etapas medidas.
+
+    Si alguna etapa no está medida (None), el presupuesto no es derivable y se
+    devuelve None — el gate FALLA (regla del ADR-014: sin medir no pasa).
+    """
+    if asr_p95_ms is None or traduccion_p95_ms is None or ruteo_p95_ms is None:
+        return None
+    return PIPELINE_MS_MAX - (asr_p95_ms + traduccion_p95_ms + ruteo_p95_ms)
 
 
 @dataclass(frozen=True)
@@ -33,6 +51,9 @@ class MedicionTts:
     """
 
     ttfa_caliente_p95_ms: float | None = None
+    asr_p95_ms: float | None = None
+    traduccion_p95_ms: float | None = None
+    ruteo_p95_ms: float | None = None
     vram_mib: float | None = None
     ram_mib: float | None = None
     pipeline_p95_ms: float | None = None
@@ -45,6 +66,9 @@ class MedicionTts:
     def __post_init__(self) -> None:
         for nombre, valor in (
             ("ttfa_caliente_p95_ms", self.ttfa_caliente_p95_ms),
+            ("asr_p95_ms", self.asr_p95_ms),
+            ("traduccion_p95_ms", self.traduccion_p95_ms),
+            ("ruteo_p95_ms", self.ruteo_p95_ms),
             ("vram_mib", self.vram_mib),
             ("ram_mib", self.ram_mib),
             ("pipeline_p95_ms", self.pipeline_p95_ms),
@@ -77,7 +101,7 @@ def _gate_numerico(
     valor: float | None,
     maximo: float,
     unidad: str,
-    divisor: float = 1.0,
+    divisor: float,
 ) -> GateResultado:
     limite = f"< {maximo / divisor:g} {unidad}"
     if valor is None:
@@ -98,10 +122,35 @@ def _gate_booleano(
     return GateResultado(nombre, valor == pasa_si_true, valor, limite)
 
 
+def _gate_ttfa(
+    ttfa_ms: float | None,
+    asr_ms: float | None,
+    traduccion_ms: float | None,
+    ruteo_ms: float | None,
+) -> GateResultado:
+    """Gate de TTFA contra el presupuesto DERIVADO de etapas medidas.
+
+    Presupuesto no derivable (etapa sin medir) o TTFA sin medir -> FALLA con
+    motivo visible. El número nunca es un literal: sale del cálculo.
+    """
+    presupuesto = derivar_presupuesto_ttfa(asr_ms, traduccion_ms, ruteo_ms)
+    nombre = "TTFA 1er chunk p95"
+    if presupuesto is None:
+        return GateResultado(nombre, False, ttfa_ms, "derivado: falta etapa medida")
+    if ttfa_ms is None:
+        return GateResultado(nombre, False, None, f"< {presupuesto:g} ms (derivado)")
+    return GateResultado(nombre, ttfa_ms < presupuesto, ttfa_ms, f"< {presupuesto:g} ms (derivado)")
+
+
 def evaluar_gates(medicion: MedicionTts) -> list[GateResultado]:
     """Evalúa los gates en orden estable, todos los criterios del ADR-014."""
     return [
-        _gate_numerico("TTFA caliente p95", medicion.ttfa_caliente_p95_ms, TTFA_MS_MAX, "ms"),
+        _gate_ttfa(
+            medicion.ttfa_caliente_p95_ms,
+            medicion.asr_p95_ms,
+            medicion.traduccion_p95_ms,
+            medicion.ruteo_p95_ms,
+        ),
         _gate_numerico("VRAM co-residente", medicion.vram_mib, VRAM_MIB_MAX, "GB", divisor=1024),
         _gate_numerico("RAM total", medicion.ram_mib, RAM_MIB_MAX, "GB", divisor=1024),
         _gate_numerico(
