@@ -202,6 +202,23 @@ def medir_ram_mib() -> float | None:
     return _bytes_a_mib(psutil.virtual_memory().used)  # pragma: no cover - máquina
 
 
+def verificar_resolucion_audible(p95_ms: float | None, resolucion_ms: float) -> None:
+    """Guard del detector de loopback: reportar por debajo de su resolución es
+    una medición que no ocurrió (patrón del 0.1 ms vs 10 ms del PR #20).
+
+    - p95 < resolucion / 2 -> raise (sub-resolución: el evento no se midió).
+    - p95 None -> raise (sin medición).
+    """
+    if p95_ms is None:
+        raise RuntimeError("p95 de la frontera audible: sin medir (instrumento roto)")
+    if p95_ms < resolucion_ms / 2:
+        raise RuntimeError(
+            f"p95 de la frontera audible {p95_ms:g} ms < resolución del detector "
+            f"({resolucion_ms:g} ms): medición sub-resolución, el evento audible "
+            "no se midió (instrumento roto)"
+        )
+
+
 def verificar_ruteo_primer_sample(p95_ms: float | None, duracion_chunk_ms: float) -> None:
     """Auto-verificación del instrumento de ruteo (time-to-first-sample-audible).
 

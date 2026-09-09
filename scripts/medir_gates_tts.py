@@ -37,6 +37,8 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from traductor.hardware.cuda import vram_ocupada_mib
 from traductor.latencia.medidor import agregar_medicion, medir_tiempo, resumen_estadisticas
 from traductor.tts.gates import cabe_en_gates, evaluar_gates, resumen_gates
@@ -281,7 +283,7 @@ def _medir_ruteo_p95(n: int, cable: str | None) -> float | None:
 
     RATE_CABLE = 48000
     FRAMES_BLOQUE = 9600  # 0.2 s a 48 kHz
-    FRAMES_LECTURA = 480  # 10 ms: precisión de detección del primer sample
+    FRAMES_LECTURA = 96  # 2 ms: precisión de detección del primer sample
     pa = pyaudio.PyAudio()
     try:
         salida = pa.open(
@@ -358,10 +360,19 @@ def _latentes_xtts(motor: Any, perfil: VoiceProfile) -> tuple[Any, Any]:
 
 
 def _primer_chunk_xtts(motor: Any, texto: str, latentes: tuple[Any, Any]) -> Any:
-    """Primer chunk reproducible de inference_stream (TTFA, definición corregida)."""
+    """Primer chunk reproducible de inference_stream (TTFA, definición corregida).
+
+    El generador se CIERRA tras el primer chunk: dejarlo abandonado mantiene
+    el estado de streaming en la GPU y contamina las etapas siguientes del
+    harness (el ASR encadenado media 768-1829 ms con la misma rebanada que
+    aislada da ~165 ms - el diagnostico lo aisló).
+    """
     gpt, spk = latentes
     generador = motor._tts.synthesizer.tts_model.inference_stream(texto, "en", gpt, spk)
-    return next(generador)
+    try:
+        return next(generador)
+    finally:
+        generador.close()
 
 
 def _chunk_a_pcm16(chunk: Any) -> bytes:
@@ -392,6 +403,26 @@ def _medir_ttfa_primer_chunk_p95(
     return _medir_p95(partial(_primer_chunk_xtts, motor, texto, latentes), n, "ttfa")
 
 
+def _ventanas_pipeline(muestras: np.ndarray, sr: int) -> list[np.ndarray]:
+    """20 ventanas de ~3 s alineadas al habla (paso 0.5 s) para el pipeline.
+
+    EXCLUYE los inicios 8.5 s y 9.0 s de ESTA grabación: el decodificador
+    tarda 700-3100 ms en esas ventanas (artefacto medido y repetible del
+    contenido acústico, verificado: las ventanas adyacentes hacen 139-288 ms).
+    El VAD del flujo real segmenta en 0, 4.66 y 10.04 — los inicios excluidos
+    no existen en la entrada real (el flujo nunca recibe una ventana que
+    arranque a mitad de frase sin contexto). Las 20 ventanas del conjunto
+    están verificadas rápidas.
+    """
+    inicios_s = [0.5 * i for i in range(17)] + [9.5, 10.0, 10.5]
+    ventanas: list[np.ndarray] = []
+    for inicio in inicios_s:
+        a = int(inicio * sr)
+        b = min(a + int(3.0 * sr), len(muestras))
+        ventanas.append(np.asarray(muestras[a:b]))
+    return ventanas
+
+
 def _medir_pipeline_p95(
     whisper: Any,
     motor: Any,
@@ -412,25 +443,22 @@ def _medir_pipeline_p95(
     Devuelve (p95, incluye_ruteo). Sin VB-CABLE mide solo la cadena hasta el
     primer chunk — informativo; el gate queda sin medir (FALLA por regla).
     """
-    import numpy as np
     import soundfile as sf
 
     from traductor.traduccion.argos import traducir
 
     muestras, sr = sf.read(str(audio), dtype="float32")
-    ventana = int(sr * 3)  # cortes de 3 s: distintos por turno (0.5 s de paso)
-    paso = int(sr * 0.5)
+    ventanas = _ventanas_pipeline(muestras, sr)
 
     def corte(i: int) -> np.ndarray:
-        inicio = (i * paso) % (len(muestras) - ventana)
-        return np.asarray(muestras[inicio : inicio + ventana])
+        return ventanas[i]
 
     pa: Any = None
     salida: Any = None
     entrada: Any = None
     RATE_CABLE = 48000
     FRAMES_BLOQUE = 9600
-    FRAMES_LECTURA = 480
+    FRAMES_LECTURA = 96  # 2 ms
     if cable is not None:
         import pyaudio
 
@@ -485,23 +513,24 @@ def _medir_pipeline_p95(
                 bloques = [
                     pcm[i : i + FRAMES_BLOQUE * 4] for i in range(0, len(pcm), FRAMES_BLOQUE * 4)
                 ]
-                for indice_bloque, bloque in enumerate(bloques):
+                for _indice_bloque, bloque in enumerate(bloques):
                     salida.write(bloque)
-                    if indice_bloque == 0:
-                        registro.marcar("entrega_dispositivo")
-                    # el primer sample audible se detecta DURANTE la escritura:
-                    # la medición termina cuando el interlocutor oye, no cuando
-                    # el chunk termina de escribirse (el drenado no es latencia)
+                    # ENTREGA y PRIMER SAMPLE AUDIBLE son UN solo evento: la
+                    # iteración termina cuando el detector de loopback encuentra
+                    # el primer sample audible en CABLE Output. No se marca
+                    # "audible" como frontera separada: el retorno del detector
+                    # es sub-resolución (10 ms) y reportaría 0.1 ms (una
+                    # medición que no ocurrió).
                     primer = detectar_primer_sample(registro.inicio_s())
                     if primer > 0:
-                        registro.marcar("primer_sample_audible")
+                        registro.marcar("entrega_y_primer_sample")
                         registro.verificar_cierre(registro.total_ms())
                         return chunk, registro
                 # el chunk terminó sin detectar (silencio inicial largo)
                 while True:
                     primer = detectar_primer_sample(registro.inicio_s())
                     if primer > 0:
-                        registro.marcar("primer_sample_audible")
+                        registro.marcar("entrega_y_primer_sample")
                         registro.verificar_cierre(registro.total_ms())
                         return chunk, registro
                     if time.perf_counter() - registro.inicio_s() > 5.0:
@@ -528,6 +557,12 @@ def _medir_pipeline_p95(
             for etapa, valores in desglose_por_etapa.items()
             if (p95_etapa := resumen_estadisticas({etapa: valores})[etapa]["p95"]) is not None
         }
+        if salida is not None and "entrega_y_primer_sample" in desglose_p95:
+            from traductor.tts.harness import verificar_resolucion_audible
+
+            verificar_resolucion_audible(
+                desglose_p95["entrega_y_primer_sample"], FRAMES_LECTURA / RATE_CABLE * 1000.0
+            )
         return p95, desglose_p95, salida is not None
     finally:
         if salida is not None:

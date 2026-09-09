@@ -21,6 +21,7 @@ from traductor.tts.harness import (
     medir_ram_mib,
     parser_harness,
     perfil_benchmark,
+    verificar_resolucion_audible,
     verificar_ruteo_primer_sample,
 )
 
@@ -255,6 +256,25 @@ def test_verificar_ruteo_falla_si_no_mide_nada() -> None:
         verificar_ruteo_primer_sample(-5.0, 1000.0)
     with pytest.raises(RuntimeError, match="cero"):
         verificar_ruteo_primer_sample(None, 1000.0)
+
+
+def test_verificar_resolucion_acepta_la_mitad() -> None:
+    """>= resolución/2 es medible; la resolución entera también."""
+    verificar_resolucion_audible(5.0, 10.0)  # == resolución / 2
+    verificar_resolucion_audible(10.0, 10.0)
+    verificar_resolucion_audible(19.4, 10.0)
+
+
+def test_verificar_resolucion_falla_si_sub_resolucion() -> None:
+    """0.1 ms con un detector de 10 ms es una medición que no ocurrió (PR #20)."""
+    with pytest.raises(RuntimeError, match="sub-resolución"):
+        verificar_resolucion_audible(0.1, 10.0)
+    with pytest.raises(RuntimeError, match="sub-resolución"):
+        verificar_resolucion_audible(4.9, 10.0)
+    with pytest.raises(
+        RuntimeError, match=r"^p95 de la frontera audible: sin medir \(instrumento roto\)$"
+    ):
+        verificar_resolucion_audible(None, 10.0)
 
 
 def _reloj_falso(ticks: list[float]) -> Callable[[], float]:

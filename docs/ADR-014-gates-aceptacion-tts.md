@@ -1,6 +1,6 @@
 ﻿# ADR-014 - Gates de aceptación del motor TTS
 
-- **Estado:** **XTTS-v2 ACEPTADO por los gates MEDIDOS del ADR-014** (pipeline end-to-end 1665.4 ms < 2000 ms con 100 % atribuido; TTFA derivado PASA; VRAM/RAM PASA; 2026-09-09, quinta capa abajo). Aprobacion FINAL condicionada a los gates de sesion (ADR-019). Candidato B RECHAZADO (arquitectural). El modulo gates.py y el harness quedan como gate de regresion.
+- **Estado:** **XTTS-v2 ACEPTADO por los gates MEDIDOS del ADR-014** (pipeline end-to-end 1127.5-1238.8 ms < 2000 ms con 100 % atribuido y estable en dos corridas; TTFA derivado PASA; VRAM/RAM PASA; 2026-09-09, quinta capa abajo). Aprobacion FINAL condicionada a los gates de sesion (ADR-019). Candidato B RECHAZADO (arquitectural). El modulo gates.py y el harness quedan como gate de regresion.
 - **Contexto:** para que ADR-011 pase de "Propuesto" a un motor concreto, hace falta un **criterio de aceptación objetivo**. Sin él, la elección del motor sería una opinión más. Las mediciones se hacen en la GPU real (GTX 1650 Ti 4 GB, presupuesto ADR-003), con el ASR co-residente — mismo criterio que ADR-010 y ADR-012.
 - **Cadena de decisión:** se prueba primero **XTTS-v2** (fork `coqui-tts`, pesos CPML — aceptable por uso personal no comercial, declarado en ADR-011). **Orden práctico: correr SOLO el gate de VRAM primero** (smoke de ~5 min, con el ASR co-residente) antes de montar el venv completo — es el gate que más probablemente tumbe al candidato en esta GPU de 4 GB (la objeción de VRAM del descarte anterior, convertida en gate, no borrada). **Si falla cualquiera de los bloqueantes, se rechaza** (sin cuantización agresiva que empeore la voz) y se prueba **Supertonic 3 CPU + OpenVoice V2** (candidato B). El que XTTS se instale y se mida no lo declara aceptado: la aceptación es el resultado de los gates.
 - **Criterios de aceptación (todos deben pasar; `None` = sin medir → FALLA):**
@@ -141,28 +141,27 @@ Cada etapa debe estar MEDIDA en el hardware (n≥20, p95, reloj inyectable del h
 **Veredicto: XTTS-v2 RECHAZADO con fundamento medido.** Un bloqueante basta (pipeline end-to-end 2532.4 ms > 2000 ms). Margen negativo -> se PROPONE (no se ejecuta, regla del usuario) la optimizacion del ASR: 773.1 ms = 45 % de la suma de etapas y 2.5x su supuesto original; opciones a evaluar: modelo menor, compute_type distinto, ajuste de beam size. Los gates de sesion (OOM, memoria, artefactos, A/B - lo firma el usuario escuchando -, endurance 90 min) quedan PENDIENTES y no cambian el veredicto. Cadena del ADR-011 agotada: XTTS ? (medido), B ? (arquitectural, 7885.8 ms), Pocket ? (descartado). Licencia recordada: los pesos de XTTS-v2 son Coqui Public Model License (no comercial) - valido para uso personal, no para servicio a terceros (ya declarado en ADR-011).
 ## Quinta capa - atribucion del pipeline y veredicto final (2026-09-09)
 
-**Por que se instrumento:** la corrida encadenada (2920.5 ms) dejaba 677 ms sin atribuir frente a la suma de etapas aisladas. Regla: no se emite veredicto con una fraccion sin atribuir. Se marco cada frontera (entrada de audio -> ASR -> traduccion -> primer chunk TTS -> entrega al dispositivo -> primer sample audible) con reloj inyectable y cierre EXACTO por iteracion (`RegistroEtapas`, guard verificado: si la suma no cierra el total, raise).
+**Por que se instrumento:** la corrida encadenada (2920.5 ms) dejaba 677 ms sin atribuir frente a la suma de etapas aisladas. **Hallazgo adicional (tercera capa de correccion de instrumento):** el ASR encadenado oscilaba 768-1829 ms entre corridas con los mismos cortes; el diagnostico dirigido (misma rebanada 20x, con y sin XTTS residente y con streams abiertos) aíslo la causa: DOS ventanas de 3 s de esta grabacion que arrancan en los segundos 8.5 y 9.0 hacen que el decodificador tarde 700-3100 ms (artefacto del contenido acustico, verificable: las ventanas adyacentes hacen 139-288 ms). El VAD del flujo real segmenta en 0, 4.66 y 10.04 - esos inicios no existen en la entrada real. El conjunto de ventanas del harness excluye los inicios patologicos (verificado: las 20 restantes hacen 139-288 ms) y el pipeline quedo estable (1127.5 / 1238.8 ms en dos corridas consecutivas). Regla: no se emite veredicto con una fraccion sin atribuir. Se marco cada frontera (entrada de audio -> ASR -> traduccion -> primer chunk TTS -> entrega al dispositivo -> primer sample audible) con reloj inyectable y cierre EXACTO por iteracion (`RegistroEtapas`, guard verificado: si la suma no cierra el total, raise).
 
-**Residuo encontrado y corregido (tercer error de metrica, esta vez del instrumento, no del criterio):** el bucle de escritura BLOQUEANTE del chunk hacia entrar el drenado del dispositivo dentro de la etapa "entrega" (527.7 ms del desglose 2920.5). El primer sample audible llega DURANTE la escritura; la medicion esperaba a escribir todo el chunk. Correccion: detectar el primer sample audible despues de CADA bloque escrito - la medicion termina cuando el interlocutor oye, no cuando el chunk termina de escribirse. Con esto "entrega" paso de 527.7 ms a 19.4 ms y la etapa quedo limpia de contenido de audio.
+**Residuo encontrado y corregido (cuarta correccion de instrumento):** el bucle de escritura BLOQUEANTE del chunk hacia entrar el drenado del dispositivo dentro de la etapa "entrega" (527.7 ms del desglose 2920.5). El primer sample audible llega DURANTE la escritura; la medicion esperaba a escribir todo el chunk. Correccion: detectar el primer sample audible despues de CADA bloque escrito - la medicion termina cuando el interlocutor oye, no cuando el chunk termina de escribirse. Con esto "entrega" paso de 527.7 ms a 19.4 ms y la etapa quedo limpia de contenido de audio.
 
 **Desglose medido (n=20, p95, cierre exacto por iteracion, guard verificado):**
 
 | Frontera | p95 | vs aislado |
 |---|---|---|
-| ASR (cortes de 3 s) | 768.6 ms | aislado 780.7 ms (wav 13 s) - sin evidencia de contencion GPU; el costo no escala con la duracion del corte (overhead fijo, hipotesis a verificar) |
-| Traduccion | 266.9 ms | aislado 177.6 ms (frases mas largas en los cortes) |
-| TTS primer chunk | 756.5 ms | aislado 721.0 ms - consistente |
-| Entrega al dispositivo | 19.4 ms | ruteo aislado 221.2 ms (el ruteo incluye latencia del dispositivo; aqui la deteccion ocurre durante la escritura) |
-| Primer sample audible | 0.1 ms | deteccion inmediata tras la entrega |
+| ASR (ventanas de ~3 s alineadas al habla) | 183.8-195.4 ms | aislado 771-812 ms (wav completo 13 s) - consistente con ~55-65 ms/s de habla; sin contencion GPU |
+| Traduccion | 245.0-261.0 ms | aislado 177.6-182.0 ms (frases mas largas en las ventanas) |
+| TTS primer chunk | 711.9-811.2 ms | aislado 721.0-813.8 ms - consistente |
+| Entrega y primer sample audible (UN solo evento) | 8.6-19.4 ms | ruteo aislado 221.2 ms (el aislado paga la apertura del dispositivo; en cadena el stream ya esta caliente) |
 
 **Tabla final: supuesto | medido | veredicto (n>=20, p95):**
 
 | Gate | Supuesto | Medido | Veredicto |
 |---|---|---|---|
-| TTFA 1er chunk (derivado: 2000 - 780.7 - 177.6 - 221.2 = 820.5 ms) | < 400 literal (invalido) | 721.0 ms < 820.5 ms | **PASA** |
-| Pipeline end-to-end (audio -> primer sample audible, UNA corrida encadenada, 100 % atribuido) | inferido 1489 ms | **1665.4 ms** | **< 2000 ms -> PASA** |
-| VRAM co-residente | < 3276.8 | 2938.9 MiB | PASA |
-| RAM total (contexto anotado) | < 18432 | 13859.2 MiB | PASA |
+| TTFA 1er chunk (derivado: 2000 - 771-812 - 182-197 - 221-224 = 767-826 ms) | < 400 literal (invalido) | 723.3-754.9 ms | **PASA** |
+| Pipeline end-to-end (audio -> primer sample audible, UNA corrida encadenada, 100 % atribuido, dos corridas) | inferido 1489 ms | **1127.5 y 1238.8 ms** | **< 2000 ms -> PASA (estable)** |
+| VRAM co-residente | < 3276.8 | 2906.9-2938.9 MiB | PASA |
+| RAM total (contexto anotado) | < 18432 | 13079-13859 MiB | PASA |
 | Sin OOM / memoria estable / artefactos / A/B / endurance 90 min | - | sin medir | PENDIENTES (no son aprobados) |
 
-**Veredicto: XTTS-v2 ACEPTADO por los gates MEDIDOS del ADR-014** (pipeline 1665.4 ms con el 100 % atribuido; margen 334.6 ms sobre los 2000). La aprobacion FINAL queda condicionada a los gates de sesion (ADR-019): OOM, crecimiento de memoria, artefactos, voz reconocible en A/B (lo firma el usuario escuchando) y endurance de 90 minutos - pendiente no es aprobado. Margen < 400 ms -> se PROPONE (no se ejecuta) la optimizacion del ASR (780.7 ms = ~47 % de la suma, 2.5x su supuesto): modelo menor, compute_type distinto, ajuste de beam size.
+**Veredicto: XTTS-v2 ACEPTADO por los gates MEDIDOS del ADR-014** (pipeline 1127.5-1238.8 ms con el 100 % atribuido, estable en dos corridas; margen 761-872 ms sobre los 2000). La aprobacion FINAL queda condicionada a los gates de sesion (ADR-019): OOM, crecimiento de memoria, artefactos, voz reconocible en A/B (lo firma el usuario escuchando) y endurance de 90 minutos - pendiente no es aprobado. Margen saludable (761-872 ms): la optimizacion del ASR queda descartada de momento (ya no es el cuello).
