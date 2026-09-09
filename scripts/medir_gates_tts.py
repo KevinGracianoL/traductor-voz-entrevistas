@@ -31,6 +31,7 @@ pega como evidencia en el ADR-014.
 
 from __future__ import annotations
 
+import sys
 import time
 from collections.abc import Callable
 from functools import partial
@@ -177,20 +178,22 @@ def _medir_asr_p95(whisper: Any, audio: Path, n: int) -> float | None:
 def _medir_traduccion_p95(n: int) -> float | None:
     """Traducción Argos ES→EN warm p95 (frases de entrevista reales).
 
-    La etapa SOLO cuenta como medida si su salida es la correcta (sanity de
-    una frase fija): el p95 de un output corrupto no es un insumo válido del
-    presupuesto -> None (FALLA por regla). Además argos cachea el MISMO texto
-    (0.0 ms): se miden n frases DISTINTAS, como los turnos reales del flujo.
+    La etapa SOLO cuenta como medida si su salida es correcta. El sanity es
+    LAXO a propósito (revisión #19): no se compara contra la traducción exacta
+    (acoplaría el gate a la versión del modelo); se verifica que contenga la
+    frase clave y no sea patológicamente larga/repetitiva — el modo de falla
+    real (ARGOS_COMPUTE_TYPE sin "default") produce el bucle "mainstream".
+    Además argos cachea el MISMO texto (0.0 ms): se miden n frases DISTINTAS,
+    como los turnos reales del flujo.
     """
     from traductor.traduccion.argos import traducir
 
-    salida = traducir(TEXTO_TRADUCCION, "es", "en")
-    if _normalizar(salida) != TRADUCCION_ESPERADA:
-        print(
-            f"Traducción es→en ROTA: {_normalizar(salida)[:60]!r} != "
-            f"{TRADUCCION_ESPERADA!r} — etapa no medible (FALLA por regla)"
-        )
+    salida = _normalizar(traducir(TEXTO_TRADUCCION, "es", "en"))
+    if "distributed systems" not in salida or len(salida) > 80:
+        print(f"Traducción es→en ROTA (salida {salida[:60]!r}): etapa no medible (FALLA por regla)")
         return None
+    if len(FRASES_TRADUCCION) < n:
+        raise RuntimeError(f"el corpus de frases ({len(FRASES_TRADUCCION)}) no alcanza para n={n}")
     registro: dict[str, list[float]] = {}
     for frase in FRASES_TRADUCCION[:n]:
         _, elapsed_ms = medir_tiempo(
@@ -235,7 +238,12 @@ def _dispositivo_cable(pa: Any, lado: str) -> int:
 
 
 def _mono24k_a_cable48k(pcm16_mono: bytes) -> bytes:
-    """Mono 24 kHz int16 -> estéreo 48 kHz int16 para el CABLE (lo que el flujo hace)."""
+    """Mono 24 kHz int16 -> estéreo 48 kHz int16 para el CABLE (lo que el flujo hace).
+
+    El 24k->48k es `np.repeat` (zero-order hold, no es un resample real: mete
+    aliasing). Para MEDIR latencia da igual; si este código migra al flujo real,
+    el flujo debe usar un resampler propio (nota de la revisión #19).
+    """
     import numpy as np
 
     mono = np.frombuffer(pcm16_mono, dtype=np.int16).astype(np.float32) / 32767.0
@@ -419,6 +427,11 @@ def _ventanas_pipeline(whisper: Any, muestras: np.ndarray, sr: int) -> list[np.n
         a = int(s.start * sr)
         b = min(int(s.end * sr), len(muestras))
         ventanas.append(np.asarray(muestras[a:b]))
+    if not ventanas:
+        raise RuntimeError(
+            "el audio de entrada no produjo segmentos VAD: el pipeline no "
+            "tiene entradas reales para medir (instrumento roto)"
+        )
     return ventanas
 
 
@@ -581,8 +594,6 @@ def _medir_pipeline_p95(
 
 
 def main(argv: list[str] | None = None) -> None:
-    import sys
-
     if hasattr(sys.stdout, "reconfigure"):  # prints con → en consolas cp1252
         sys.stdout.reconfigure(encoding="utf-8")
     import torch
@@ -632,7 +643,16 @@ def main(argv: list[str] | None = None) -> None:
     vram = vram_ocupada_mib(torch.cuda)
     ram = medir_ram_mib()
     del whisper, motor  # liberar DESPUÉS de la foto, no antes
-    medicion = componer_medicion(ttfa, asr, traduccion, ruteo, pipeline_gate, vram, ram, args)
+    medicion = componer_medicion(
+        ttfa=ttfa,
+        asr=asr,
+        traduccion=traduccion,
+        ruteo=ruteo,
+        pipeline=pipeline_gate,
+        vram=vram,
+        ram=ram,
+        args=args,
+    )
     resultados = evaluar_gates(medicion)
     print(f"ASR warm p95 (faster-whisper es): {asr:.1f} ms" if asr else "ASR: sin medir")
     print(f"Traducción Argos p95: {traduccion:.1f} ms" if traduccion else "Traducción: sin medir")

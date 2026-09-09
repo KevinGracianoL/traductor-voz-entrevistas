@@ -146,6 +146,7 @@ def parser_harness() -> argparse.ArgumentParser:
 
 
 def componer_medicion(
+    *,
     ttfa: float | None,
     asr: float | None,
     traduccion: float | None,

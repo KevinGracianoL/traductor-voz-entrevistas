@@ -141,7 +141,16 @@ def test_parser_help_explica_flags() -> None:
 
 def test_componer_medicion_sin_flags_de_sesion_queda_sin_medir(tmp_path: Path) -> None:
     args = parser_harness().parse_args(["--warmup-audio", str(_wav(tmp_path))])
-    m = componer_medicion(300.0, 400.0, 150.0, 50.0, None, 2500.0, 12000.0, args)
+    m = componer_medicion(
+        ttfa=300.0,
+        asr=400.0,
+        traduccion=150.0,
+        ruteo=50.0,
+        pipeline=None,
+        vram=2500.0,
+        ram=12000.0,
+        args=args,
+    )
     assert m.ttfa_caliente_p95_ms == 300.0
     assert m.asr_p95_ms == 400.0
     assert m.traduccion_p95_ms == 150.0
@@ -167,7 +176,16 @@ def test_componer_medicion_go_completo(tmp_path: Path) -> None:
             "--endurance-90min",
         ]
     )
-    m = componer_medicion(300.0, 400.0, 150.0, 50.0, None, 2500.0, 12000.0, args)
+    m = componer_medicion(
+        ttfa=300.0,
+        asr=400.0,
+        traduccion=150.0,
+        ruteo=50.0,
+        pipeline=None,
+        vram=2500.0,
+        ram=12000.0,
+        args=args,
+    )
     assert m.pipeline_p95_ms == 1500.0
     assert m.oom is False
     assert m.memoria_estable is True
@@ -189,7 +207,16 @@ def test_componer_medicion_flags_negativos(tmp_path: Path) -> None:
             "--no-endurance-90min",
         ]
     )
-    m = componer_medicion(300.0, 400.0, 150.0, 50.0, None, 2500.0, 12000.0, args)
+    m = componer_medicion(
+        ttfa=300.0,
+        asr=400.0,
+        traduccion=150.0,
+        ruteo=50.0,
+        pipeline=None,
+        vram=2500.0,
+        ram=12000.0,
+        args=args,
+    )
     assert m.oom is True
     assert m.memoria_estable is False
     assert m.artefactos is True
@@ -203,16 +230,43 @@ def test_componer_medicion_pipeline_medido_gana_al_flag(tmp_path: Path) -> None:
     args = parser_harness().parse_args(
         ["--warmup-audio", str(_wav(tmp_path)), "--pipeline-p95", "1500"]
     )
-    m = componer_medicion(300.0, 400.0, 150.0, 50.0, 1890.0, 2500.0, 12000.0, args)
+    m = componer_medicion(
+        ttfa=300.0,
+        asr=400.0,
+        traduccion=150.0,
+        ruteo=50.0,
+        pipeline=1890.0,
+        vram=2500.0,
+        ram=12000.0,
+        args=args,
+    )
     assert m.pipeline_p95_ms == 1890.0
-    m = componer_medicion(300.0, 400.0, 150.0, 50.0, None, 2500.0, 12000.0, args)
+    m = componer_medicion(
+        ttfa=300.0,
+        asr=400.0,
+        traduccion=150.0,
+        ruteo=50.0,
+        pipeline=None,
+        vram=2500.0,
+        ram=12000.0,
+        args=args,
+    )
     assert m.pipeline_p95_ms == 1500.0
 
 
 def test_componer_medicion_ttfa_fuera_de_presupuesto_derivado_falla(tmp_path: Path) -> None:
     """Sin etapas medidas el presupuesto no se deriva: el TTFA FALLA aunque mida 1 ms."""
     args = parser_harness().parse_args(["--warmup-audio", str(_wav(tmp_path))])
-    m = componer_medicion(1.0, None, None, None, None, 2500.0, 12000.0, args)
+    m = componer_medicion(
+        ttfa=1.0,
+        asr=None,
+        traduccion=None,
+        ruteo=None,
+        pipeline=None,
+        vram=2500.0,
+        ram=12000.0,
+        args=args,
+    )
     assert cabe_en_gates(m) is False
 
 
