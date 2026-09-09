@@ -1,6 +1,6 @@
 # ADR-013 - Worker TTS aislado y enrolamiento (Propuesto)
 
-- **Estado:** Propuesto (2026-09-08) — protocolo de worker y enrolamiento listos (PR #14); **motor sin elegir** (ADR-011) y medición pendiente en la máquina objetivo.
+- **Estado:** Propuesto (2026-09-08) — protocolo de worker y enrolamiento listos (PR #14); **motor sin elegir** (ADR-011, cadena agotada — ver ADR-014/README Fase 2g) y medición pendiente en la máquina objetivo.
 - **Contexto:** el TTS de ES→EN (hablar con el timbre de Kevin) necesita dos cosas que este PR fija antes de elegir motor:
   1. **Enrolamiento:** convertir muestras grabadas del usuario en un `VoiceProfile` validado y persistido.
   2. **Aislamiento:** el motor TTS debe poder cargarse/descargarse en su **propio proceso**, sin comprometer la VRAM que ya ocupa Whisper (ADR-010 midió la co-residencia como problema real).
@@ -20,3 +20,5 @@
   - El motor real (candidato apache-2.0, p. ej. CosyVoice 2) se inyecta como `TTSBackend` cuando un ADR lo elija; el protocolo del worker queda fijado y testeable sin GPU.
   - La medición de latencia del TTS (gates del PR #15) se alimenta del `elapsed_ms` que ya reporta `ResultadoOk`.
   - Enrolamiento y tienda son puro FS: testeables en CI con `tmp_path`; el worker con fakes del backend y la tienda.
+
+- **Nota de diseño (2026-09-09, observación del review del PR #18):** el cache de timbre de `BackendB` se indexa por `(id, rutas)` — cubre re-enrolar con grabaciones NUEVAS, pero no SOBREESCRIBIR una ruta existente: la ruta no cambia y se seguiría sirviendo el timbre viejo. Hoy no importa (ningún motor está en el flujo, ADR-014), pero cuando un backend con cache entre al worker de vida larga, decidir explícitamente entre: (a) `st_mtime_ns` + tamaño de cada muestra como parte de la clave, (b) hash del contenido, o (c) invalidación explícita del cache desde la tienda al re-enrolar. Relacionado: validar los pesos en `__init__` deja dos canales de fallo (paquetes → `Salud`, pesos → excepción) — para un worker que debe REPORTAR salud en vez de morir al arrancar, la presencia de pesos debería ser otra rama de `verificar_salud`.

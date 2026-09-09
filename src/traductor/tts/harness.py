@@ -12,6 +12,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 from traductor.tts.gates import MedicionTts
+from traductor.tts.modelos import VoiceProfile
+
+TEXTO_POR_DEFECTO = "hola, esto es una prueba del motor de voz"
 
 
 def _wav_existente(nombre: str) -> Callable[[str], Path]:
@@ -44,7 +47,19 @@ def parser_harness() -> argparse.ArgumentParser:
     parser.add_argument(
         "--referencia",
         type=_wav_existente("referencia"),
-        help="Muestras de referencia para el perfil TTS (default: --warmup-audio)",
+        nargs="+",
+        help="Muestras de referencia (1 o más) para el perfil TTS (default: --warmup-audio)",
+    )
+    parser.add_argument(
+        "--motor",
+        choices=("xtts", "b"),
+        default="xtts",
+        help="Candidato a medir: xtts (primario ADR-011) o b (Supertonic 3 + OpenVoice V2)",
+    )
+    parser.add_argument(
+        "--texto",
+        default=TEXTO_POR_DEFECTO,
+        help="Texto sintetizado en cada repetición (la salida del flujo ES→EN es inglés)",
     )
     parser.add_argument(
         "--pipeline-p95",
@@ -83,6 +98,14 @@ def componer_medicion(
         artefactos=args.artefactos,
         voz_reconocible_ab=args.voz_reconocible_ab,
         endurance_90min=args.endurance_90min,
+    )
+
+
+def perfil_benchmark(args: argparse.Namespace) -> VoiceProfile:
+    """Perfil del harness: `--referencia` (1+ muestras) o el warm-up si no se pasa."""
+    referencia = args.referencia or [args.warmup_audio]
+    return VoiceProfile(
+        id="benchmark", nombre="Benchmark", muestras=tuple(str(m) for m in referencia)
     )
 
 

@@ -33,27 +33,41 @@ from typing import Any
 from traductor.hardware.cuda import vram_ocupada_mib
 from traductor.latencia.medidor import agregar_medicion, medir_tiempo, resumen_estadisticas
 from traductor.tts.gates import cabe_en_gates, evaluar_gates, resumen_gates
-from traductor.tts.harness import componer_medicion, medir_ram_mib, parser_harness
+from traductor.tts.harness import (
+    componer_medicion,
+    medir_ram_mib,
+    parser_harness,
+    perfil_benchmark,
+)
 from traductor.tts.modelos import VoiceProfile
 
-TEXTO = "hola, esto es una prueba del motor de voz"
 N_REPETICIONES = 20
 # Piso para la auto-verificación de Whisper. tiny int8 son decenas de MB de
 # pesos; el bulto del contexto CUDA ya existe en vram_base. 50 es conservador,
 # NO 500 (estimación de memoria citada sin verificar, r4).
 DELTA_WHISPER_MIN_MIB = 50.0
+# Candidato B (ADR-011): pesos de OpenVoice V2. Sobre-escribible por env para
+# reproducir la medición en otra máquina sin tocar el código.
+DIR_CHECKPOINTS_B = r"C:\Users\Kevin\deps\OpenVoice\checkpoints_v2"
 
 
-def _cargar_motor() -> Any:
-    """Carga el candidato primario (ADR-011): XTTS-v2 vía fork coqui-tts.
+def _cargar_motor(motor: str) -> Any:
+    """Carga el candidato pedido por `--motor` (xtts | b).
 
-    Requiere coqui-tts instalado (venv propio del TTS) y el modelo descargado.
-    Si la prueba rechaza XTTS, se cambia aquí por el candidato B
-    (Supertonic 3 CPU + OpenVoice V2).
+    `xtts`: primario (ADR-011), vía fork coqui-tts — requiere el venv propio
+    del TTS y el modelo descargado. `b`: Supertonic 3 CPU + OpenVoice V2
+    (ADR-011/014) — requiere supertonic + el repo OpenVoice instalado y los
+    pesos en `DIR_CHECKPOINTS_B`.
     """
-    from traductor.tts.backend_xtts import BackendXtts
+    if motor == "xtts":
+        from traductor.tts.backend_xtts import BackendXtts
 
-    return BackendXtts(idioma_salida="en")
+        return BackendXtts(idioma_salida="en")
+    import os
+
+    from traductor.tts.backend_b import BackendB
+
+    return BackendB(dir_checkpoints=os.environ.get("OPENVOICE_CHECKPOINTS_V2", DIR_CHECKPOINTS_B))
 
 
 def _cargar_whisper() -> Any:
@@ -95,13 +109,13 @@ def _calentar_whisper_y_foto(whisper: Any, audio: Path) -> float | None:
     return vram_ocupada_mib(torch.cuda)
 
 
-def _medir_ttfa_p95(motor: Any, n: int, perfil: VoiceProfile) -> float | None:
+def _medir_ttfa_p95(motor: Any, n: int, perfil: VoiceProfile, texto: str) -> float | None:
     """TTFA caliente p95, con el medidor honesto (math.ceil, None si n<20)."""
-    motor.sintetizar(TEXTO, perfil)  # warm-up
+    motor.sintetizar(texto, perfil)  # warm-up
     registro: dict[str, list[float]] = {}
     for _ in range(n):
         _, elapsed_ms = medir_tiempo(
-            partial(motor.sintetizar, TEXTO, perfil),
+            partial(motor.sintetizar, texto, perfil),
             clock=time.perf_counter,
         )
         registro = agregar_medicion(registro, "ttfa", elapsed_ms)
@@ -112,10 +126,9 @@ def main(argv: list[str] | None = None) -> None:
     import torch
 
     args = parser_harness().parse_args(argv)
-    referencia = args.referencia if args.referencia is not None else args.warmup_audio
-    perfil = VoiceProfile(id="benchmark", nombre="Benchmark", muestras=(str(referencia),))
+    perfil = perfil_benchmark(args)
 
-    motor = _cargar_motor()
+    motor = _cargar_motor(args.motor)
     vram_base = vram_ocupada_mib(torch.cuda)  # motor residente, Whisper aún no
     whisper = _cargar_whisper()
     # Orden deliberado: Whisper ya residente ANTES de medir TTFA — las síntesis
@@ -131,7 +144,7 @@ def main(argv: list[str] | None = None) -> None:
                 f"{DELTA_WHISPER_MIN_MIB:g}): el warm-up no ejercitó CT2; "
                 "instrumento no fiable."
             )
-    ttfa = _medir_ttfa_p95(motor, N_REPETICIONES, perfil)
+    ttfa = _medir_ttfa_p95(motor, N_REPETICIONES, perfil, args.texto)
     # Foto de co-residencia DESPUÉS de las síntesis TTFA: Whisper + motor con
     # sus reservas reales. Es el número del gate.
     vram = vram_ocupada_mib(torch.cuda)

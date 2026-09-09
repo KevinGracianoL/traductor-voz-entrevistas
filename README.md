@@ -60,12 +60,12 @@ flowchart LR
 | ¿Legible y sin bugs? | **ruff** | `select = ["E","F","B","SIM","UP","I","S"]` |
 | ¿Los tipos encajan? | **mypy --strict** | errores de tipo = CI rojo |
 | ¿Hace lo que dice? | **pytest** | `--cov-fail-under=90` |
-| ¿Qué no probé? | **coverage** | **100 %** (674 stmts, 0 sin cubrir) |
+| ¿Qué no probé? | **coverage** | **100 %** (743 stmts, 0 sin cubrir) |
 | ¿Detectaría un bug? | **mutmut** | **0 supervivientes** — el gate CI falla si `survived > 0` |
 
 > `mutmut` muta tu código a propósito (cambia `<=`→`<`, `*1000`→`/1000`, borra branches…) y exige que **alguien** lo detecte. El gate CI falla si `survived > 0`. Se verificó a mano rompiendo el código y viendo el gate rechazarlo.
 >
-> **214 tests** cubren el happy path **y** los modos de fallo: locks de antivirus, escrituras truncadas, `.tmp` huérfanos, rutas Windows con backslash/apóstrofo.
+> **235 tests** cubren el happy path **y** los modos de fallo: locks de antivirus, escrituras truncadas, `.tmp` huérfanos, rutas Windows con backslash/apóstrofo.
 
 ---
 
@@ -166,7 +166,7 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 ├── scripts/                    # wrappers finos: hardware, traducción
 ├── setup_dlls.py               # CUDA 12/13 coexistiendo (Windows, locks AV)
 ├── docs/                       # ADRs + evidencia smoke Windows
-├── tests/                      # 214 tests, 100 % cov, mutantes en CI
+├── tests/                      # 235 tests, 100 % cov, mutantes en CI
 └── .github/workflows/ci.yml    # 5 gates que fallan el PR si algo se rompe
 ```
 
@@ -206,8 +206,9 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 - [x] **Fase 2c — Benchmark ASR** — WER + p50/p95: faster-whisper vs moonshine (ADR-012, Propuesto)
 - [x] **Fase 2d — Worker TTS + enrolamiento** — worker aislado + tienda JSON (ADR-013, Propuesto)
 - [x] **Fase 2e — Gates TTS** — 9 gates del go/no-go: TTFA, VRAM, RAM, pipeline, OOM, memoria, artefactos, A/B, endurance (ADR-014, Propuesto)
-- [ ] **Fase 2f — Go/no-go XTTS** — corrida real del candidato primario (fork coqui-tts) contra los gates; si falla → Supertonic+OpenVoice V2
-- [ ] **Fase 3 — Conversión de voz** — timbre de Kevin
+- [x] **Fase 2f — Go/no-go del motor TTS** — XTTS-v2 **rechazado** por TTFA (3574 ms y 655–889 ms primer chunk vs < 400 ms) y candidato B (Supertonic 3 + OpenVoice V2) **rechazado** por TTFA (7885.8 ms) — evidencia y números en [ADR-014](docs/ADR-014-gates-aceptacion-tts.md)
+- [ ] **Fase 2g — Motor TTS que pase los gates** — **ningún motor pasa hoy**: ni los clones (XTTS ✗, B ✗, Pocket descartado) ni la voz genérica Supertonic sola (~1.75 s por fragmento > 400 ms); este ítem rastrea el hueco y el flujo arranca por la escalera del ADR-015 (nivel 3: voz genérica + subtítulos)
+- [ ] **Fase 3 — Conversión de voz** — timbre de Kevin (condicionada a un motor que pase los gates del ADR-014, Fase 2g)
 
 ---
 
