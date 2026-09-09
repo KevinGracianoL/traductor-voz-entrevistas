@@ -216,9 +216,12 @@ def _detectar_cable() -> str | None:
 
 
 def _medir_ruteo_p95(n: int, cable: str | None) -> float | None:
-    """Ruteo a VB-CABLE p95: escribir un chunk de 1 s al dispositivo.
+    """Ruteo a VB-CABLE p95: el chunk se considera rutado cuando el dispositivo
+    lo CONSUMIÓ (drenado), no cuando el buffer lo acepta.
 
-    Sin cable instalado devuelve None (el gate FALLA por regla: sin medir).
+    Auto-verificación obligatoria (patrón delta VRAM de Whisper): si el p95
+    sale por debajo del piso físico (frames/sample_rate), la escritura solo
+    fue aceptada -> raise. Sin cable instalado devuelve None (FALLA por regla).
     """
     if cable is None:
         print("Ruteo: VB-CABLE NO instalado -> gate sin medir (FALLA por regla)")
@@ -226,6 +229,9 @@ def _medir_ruteo_p95(n: int, cable: str | None) -> float | None:
     import numpy as np
     import pyaudio
 
+    from traductor.tts.harness import verificar_piso_ruteo
+
+    FRAMES_BLOQUE = 4800  # 0.2 s a 24 kHz: cabe en el buffer del dispositivo
     pa = pyaudio.PyAudio()
     try:
         indice = next(
@@ -239,15 +245,30 @@ def _medir_ruteo_p95(n: int, cable: str | None) -> float | None:
             rate=SR_FLUJO,
             output=True,
             output_device_index=indice,
+            frames_per_buffer=FRAMES_BLOQUE,
         )
         try:
             tono = (np.sin(np.arange(SR_FLUJO) * 0.05) * 1000).astype(np.int16).tobytes()
+            bloques = [
+                tono[i : i + FRAMES_BLOQUE * 2] for i in range(0, len(tono), FRAMES_BLOQUE * 2)
+            ]
 
-            def escribir() -> object:
-                stream.write(tono)
+            def rutear_y_drenar() -> object:
+                for bloque in bloques:
+                    stream.write(bloque)
+                    # el bloque es reproducible cuando el dispositivo lo consumió:
+                    # el buffer vuelve a aceptar el bloque completo
+                    while stream.get_write_available() < FRAMES_BLOQUE:
+                        time.sleep(0.005)
                 return None
 
-            return _medir_p95(escribir, n, "ruteo")
+            p95 = _medir_p95(rutear_y_drenar, n, "ruteo")
+            verificar_piso_ruteo(p95, SR_FLUJO, SR_FLUJO)
+            print(
+                f"Ruteo p95: {p95:.1f} ms | piso físico: "
+                f"{SR_FLUJO / SR_FLUJO * 1000:g} ms (auto-verificación PASA)"
+            )
+            return p95
         finally:
             stream.stop_stream()
             stream.close()
@@ -308,17 +329,33 @@ def _medir_pipeline_p95(
     latentes: tuple[Any, Any] | None,
     cable: str | None,
 ) -> tuple[float | None, bool]:
-    """Pipeline end-to-end p95: audio -> ASR es -> Argos -> 1er chunk -> cable.
+    """Pipeline end-to-end p95: audio -> ASR es -> Argos -> 1er chunk -> CABLE.
 
-    Devuelve (p95, incluye_ruteo). Con VB-CABLE el chunk se escribe al
-    micrófono virtual (el número es el gate). Sin cable: mide la cadena hasta
-    el primer chunk — informativo; el gate queda sin medir (FALLA por regla)
-    porque el salto real no existe en esta máquina.
+    UNA corrida encadenada (no la suma de etapas): cada iteración transcribe
+    un corte DISTINTO del audio de entrada (los turnos reales difieren, y
+    argos cachea texto idéntico), traduce, sintetiza el primer chunk y lo
+    rutea al cable con DRENADO (el chunk es reproducible cuando el dispositivo
+    lo consume, no cuando el buffer lo acepta).
+
+    Devuelve (p95, incluye_ruteo). Sin VB-CABLE mide solo la cadena hasta el
+    primer chunk — informativo; el gate queda sin medir (FALLA por regla).
     """
+    import numpy as np
+    import soundfile as sf
+
     from traductor.traduccion.argos import traducir
+
+    muestras, sr = sf.read(str(audio), dtype="float32")
+    ventana = int(sr * 3)  # cortes de 3 s: distintos por turno (0.5 s de paso)
+    paso = int(sr * 0.5)
+
+    def corte(i: int) -> np.ndarray:
+        inicio = (i * paso) % (len(muestras) - ventana)
+        return np.asarray(muestras[inicio : inicio + ventana])
 
     pa: Any = None
     stream: Any = None
+    FRAMES_BLOQUE = 4800
     if cable is not None:
         import pyaudio
 
@@ -334,11 +371,12 @@ def _medir_pipeline_p95(
             rate=SR_FLUJO,
             output=True,
             output_device_index=indice,
+            frames_per_buffer=FRAMES_BLOQUE,
         )
     try:
 
-        def una_iteracion() -> object:
-            segmentos = list(whisper.transcribe(str(audio), language="es")[0])
+        def una_iteracion(i: int) -> object:
+            segmentos = list(whisper.transcribe(corte(i), language="es")[0])
             texto_es = " ".join(s.text for s in segmentos)
             texto_en = traducir(texto_es, "es", "en")
             if latentes is not None:
@@ -346,10 +384,19 @@ def _medir_pipeline_p95(
             else:
                 chunk = motor.sintetizar(texto_en, perfil)
             if stream is not None:
-                stream.write(_chunk_a_pcm16(chunk))
+                pcm = _chunk_a_pcm16(chunk)
+                for i in range(0, len(pcm), FRAMES_BLOQUE * 2):
+                    stream.write(pcm[i : i + FRAMES_BLOQUE * 2])
+                    while stream.get_write_available() < FRAMES_BLOQUE:
+                        time.sleep(0.005)
             return chunk
 
-        p95 = _medir_p95(una_iteracion, n, "pipeline")
+        una_iteracion(0)  # warm-up
+        registro: dict[str, list[float]] = {}
+        for i in range(n):
+            _, elapsed_ms = medir_tiempo(partial(una_iteracion, i), clock=time.perf_counter)
+            registro = agregar_medicion(registro, "pipeline", elapsed_ms)
+        p95 = resumen_estadisticas(registro)["pipeline"]["p95"]
         return p95, stream is not None
     finally:
         if stream is not None:

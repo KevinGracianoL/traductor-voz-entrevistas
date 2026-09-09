@@ -151,3 +151,30 @@ def medir_ram_mib() -> float | None:
     except ImportError:
         return None
     return _bytes_a_mib(psutil.virtual_memory().used)  # pragma: no cover - máquina
+
+
+def piso_ruteo_ms(frames: int, sample_rate: int) -> float:
+    """Tiempo físico mínimo para que un buffer drene al sample rate (ms).
+
+    Un buffer de `frames` muestras a `sample_rate` Hz no puede reproducirse
+    más rápido que en `frames / sample_rate` segundos: cualquier medición de
+    ruteo por debajo de esto significa que la escritura solo fue ACEPTADA por
+    el buffer del dispositivo, no que el audio fuera reproducible.
+    """
+    return frames / sample_rate * 1000.0
+
+
+def verificar_piso_ruteo(p95_ms: float | None, frames: int, sample_rate: int) -> None:
+    """Auto-verificación del instrumento de ruteo (patrón delta VRAM de Whisper).
+
+    Un p95 por debajo del piso físico es un instrumento roto, no un resultado
+    bueno: la escritura retornó antes de que el audio pudiera reproducirse.
+    Raises: RuntimeError con el número medido y el piso.
+    """
+    piso = piso_ruteo_ms(frames, sample_rate)
+    if p95_ms is None or p95_ms < piso:
+        raise RuntimeError(
+            f"p95 de ruteo {p95_ms} ms < piso físico {piso:g} ms "
+            f"({frames} frames a {sample_rate} Hz): la escritura solo fue "
+            "aceptada por el buffer, no reproducida. Instrumento roto."
+        )

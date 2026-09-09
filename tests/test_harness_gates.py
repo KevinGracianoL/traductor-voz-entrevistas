@@ -19,6 +19,8 @@ from traductor.tts.harness import (
     medir_ram_mib,
     parser_harness,
     perfil_benchmark,
+    piso_ruteo_ms,
+    verificar_piso_ruteo,
 )
 
 
@@ -222,3 +224,29 @@ def test_bytes_a_mib_unidad() -> None:
     """1 GiB = 1024 MiB; un /1024**3 daría ~1 y el gate de RAM pasaría siempre."""
     assert _bytes_a_mib(1 * 1024**3) == 1024.0
     assert _bytes_a_mib(512 * 1024**2) == 512.0
+
+
+def test_piso_ruteo_es_el_tiempo_fisico_de_drenado() -> None:
+    """1 s de audio a 24 kHz drena en >= 1.0 s: no puede reproducirse más rápido."""
+    assert piso_ruteo_ms(24000, 24000) == 1000.0
+    assert piso_ruteo_ms(12000, 24000) == 500.0
+    assert piso_ruteo_ms(4800, 48000) == 100.0
+
+
+def test_verificar_piso_ruteo_acepta_el_piso_exacto() -> None:
+    """El piso exacto es válido (drenado a velocidad real, sin latencia extra)."""
+    verificar_piso_ruteo(1000.0, 24000, 24000)
+    verificar_piso_ruteo(1200.0, 24000, 24000)
+
+
+def test_verificar_piso_ruteo_raise_si_por_debajo() -> None:
+    """Un p95 debajo del piso físico es un instrumento roto, no un resultado bueno."""
+    with pytest.raises(RuntimeError, match="piso físico"):
+        verificar_piso_ruteo(50.0, 24000, 24000)  # aceptó el buffer, no reprodujo
+    with pytest.raises(RuntimeError, match="piso físico"):
+        verificar_piso_ruteo(999.9, 24000, 24000)
+
+
+def test_verificar_piso_ruteo_raise_sin_medicion() -> None:
+    with pytest.raises(RuntimeError, match="piso físico"):
+        verificar_piso_ruteo(None, 24000, 24000)
