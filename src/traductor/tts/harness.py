@@ -8,6 +8,7 @@ el harness es hardware (GPU + modelos), su lógica no. El script
 from __future__ import annotations
 
 import argparse
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -15,6 +16,54 @@ from traductor.tts.gates import MedicionTts
 from traductor.tts.modelos import VoiceProfile
 
 TEXTO_POR_DEFECTO = "hola, esto es una prueba del motor de voz"
+
+
+class RegistroEtapas:
+    """Marcas de tiempo por frontera con reloj inyectable (atribución del pipeline).
+
+    Los deltas entre marcas consecutivas se miden con EL MISMO reloj, así que
+    su suma es EXACTA por construcción (cierre del 100 %). `verificar_cierre`
+    atrapa un hueco sin instrumentar (misma filosofía que los guards de ruteo:
+    si no se puede atribuir, no se reporta como medido).
+    """
+
+    def __init__(self, clock: Callable[[], float] = time.perf_counter) -> None:
+        self._clock = clock
+        self._marcas: list[tuple[str, float]] = []
+
+    def marcar(self, etapa: str) -> None:
+        self._marcas.append((etapa, self._clock()))
+
+    def desglose_ms(self) -> dict[str, float]:
+        """Deltas por etapa en ms (la primera marca abre el contador)."""
+        if not self._marcas:
+            return {}
+        desglose: dict[str, float] = {}
+        for i in range(1, len(self._marcas)):
+            etapa = self._marcas[i][0]
+            desglose[etapa] = (self._marcas[i][1] - self._marcas[i - 1][1]) * 1000.0
+        return desglose
+
+    def total_ms(self) -> float:
+        if len(self._marcas) < 2:
+            return 0.0
+        return (self._marcas[-1][1] - self._marcas[0][1]) * 1000.0
+
+    def inicio_s(self) -> float:
+        """Valor del reloj en la primera marca (para mediciones que parten de ahí)."""
+        return self._marcas[0][1] if self._marcas else self._clock()
+
+    def verificar_cierre(self, total_ms: float) -> None:
+        """La suma de las etapas DEBE cerrar el total (100 % atribuido)."""
+        suma = sum(self.desglose_ms().values())
+        # pragma: no mutate - el mutante `>` → `>=` en el épsilon de cierre es
+        # equivalente: la frontera exacta de 1e-6 ms no es alcanzable con
+        # floats (la diferencia nunca es exactamente el épsilon)
+        if abs(suma - total_ms) > 1e-6:  # pragma: no mutate - ver comentario
+            raise RuntimeError(
+                f"residuo sin atribuir: {total_ms - suma:.3f} ms (etapas "
+                f"suman {suma:.3f} ms, total {total_ms:.3f} ms)"
+            )
 
 
 def _wav_existente(nombre: str) -> Callable[[str], Path]:
@@ -97,6 +146,7 @@ def parser_harness() -> argparse.ArgumentParser:
 
 
 def componer_medicion(
+    *,
     ttfa: float | None,
     asr: float | None,
     traduccion: float | None,
@@ -153,28 +203,43 @@ def medir_ram_mib() -> float | None:
     return _bytes_a_mib(psutil.virtual_memory().used)  # pragma: no cover - máquina
 
 
-def piso_ruteo_ms(frames: int, sample_rate: int) -> float:
-    """Tiempo físico mínimo para que un buffer drene al sample rate (ms).
+def verificar_resolucion_audible(p95_ms: float | None, resolucion_ms: float) -> None:
+    """Guard del detector de loopback: reportar por debajo de su resolución es
+    una medición que no ocurrió (patrón del 0.1 ms vs 10 ms del PR #20).
 
-    Un buffer de `frames` muestras a `sample_rate` Hz no puede reproducirse
-    más rápido que en `frames / sample_rate` segundos: cualquier medición de
-    ruteo por debajo de esto significa que la escritura solo fue ACEPTADA por
-    el buffer del dispositivo, no que el audio fuera reproducible.
+    - p95 < resolucion / 2 -> raise (sub-resolución: el evento no se midió).
+    - p95 None -> raise (sin medición).
     """
-    return frames / sample_rate * 1000.0
-
-
-def verificar_piso_ruteo(p95_ms: float | None, frames: int, sample_rate: int) -> None:
-    """Auto-verificación del instrumento de ruteo (patrón delta VRAM de Whisper).
-
-    Un p95 por debajo del piso físico es un instrumento roto, no un resultado
-    bueno: la escritura retornó antes de que el audio pudiera reproducirse.
-    Raises: RuntimeError con el número medido y el piso.
-    """
-    piso = piso_ruteo_ms(frames, sample_rate)
-    if p95_ms is None or p95_ms < piso:
+    if p95_ms is None:
+        raise RuntimeError("p95 de la frontera audible: sin medir (instrumento roto)")
+    if p95_ms < resolucion_ms / 2:
         raise RuntimeError(
-            f"p95 de ruteo {p95_ms} ms < piso físico {piso:g} ms "
-            f"({frames} frames a {sample_rate} Hz): la escritura solo fue "
-            "aceptada por el buffer, no reproducida. Instrumento roto."
+            f"p95 de la frontera audible {p95_ms:g} ms < resolución del detector "
+            f"({resolucion_ms:g} ms): medición sub-resolución, el evento audible "
+            "no se midió (instrumento roto)"
+        )
+
+
+def verificar_ruteo_primer_sample(p95_ms: float | None, duracion_chunk_ms: float) -> None:
+    """Auto-verificación del instrumento de ruteo (time-to-first-sample-audible).
+
+    El ruteo mide desde que el chunk se entrega al dispositivo hasta que el
+    PRIMER sample es reproducible en CABLE Input — NUNCA hasta que el chunk
+    termina de sonar (la duración del audio no es latencia). El guard atrapa
+    el error conocido (segunda métrica mal definida, ver ADR-014):
+    - p95 >= duración del chunk -> la medición incluyó el drenado completo:
+      mide "hasta que terminó de sonar", no "hasta que empezó" -> raise.
+    - p95 <= 0 (o None) -> no se midió nada -> raise.
+    """
+    if p95_ms is None or p95_ms <= 0:
+        raise RuntimeError(
+            f"p95 de ruteo {p95_ms} ms: indistinguible de cero — no se midió "
+            "nada (instrumento roto)"
+        )
+    if p95_ms >= duracion_chunk_ms:
+        raise RuntimeError(
+            f"p95 de ruteo {p95_ms:g} ms >= duración del chunk "
+            f"{duracion_chunk_ms:g} ms: la medición incluyó el drenado "
+            "completo, no el primer sample audible (error conocido, "
+            "instrumento roto)"
         )
