@@ -1,6 +1,6 @@
-# ADR-014 - Gates de aceptación del motor TTS (Propuesto)
+# ADR-014 - Gates de aceptación del motor TTS
 
-- **Estado:** Propuesto (2026-09-08) — criterios completos y harness listos (PRs #15/#16); **medición pendiente** en la máquina objetivo con XTTS-v2 (candidato primario, ADR-011).
+- **Estado:** XTTS-v2 **medido y RECHAZADO** por TTFA (2026-09-08, evidencia abajo); **Supertonic 3 CPU + OpenVoice V2 (candidato B) en evaluación**. El módulo `gates.py` y el harness quedan como gate de regresión.
 - **Contexto:** para que ADR-011 pase de "Propuesto" a un motor concreto, hace falta un **criterio de aceptación objetivo**. Sin él, la elección del motor sería una opinión más. Las mediciones se hacen en la GPU real (GTX 1650 Ti 4 GB, presupuesto ADR-003), con el ASR co-residente — mismo criterio que ADR-010 y ADR-012.
 - **Cadena de decisión:** se prueba primero **XTTS-v2** (fork `coqui-tts`, pesos CPML — aceptable por uso personal no comercial, declarado en ADR-011). **Orden práctico: correr SOLO el gate de VRAM primero** (smoke de ~5 min, con el ASR co-residente) antes de montar el venv completo — es el gate que más probablemente tumbe al candidato en esta GPU de 4 GB (la objeción de VRAM del descarte anterior, convertida en gate, no borrada). **Si falla cualquiera de los bloqueantes, se rechaza** (sin cuantización agresiva que empeore la voz) y se prueba **Supertonic 3 CPU + OpenVoice V2** (candidato B). El que XTTS se instale y se mida no lo declara aceptado: la aceptación es el resultado de los gates.
 - **Criterios de aceptación (todos deben pasar; `None` = sin medir → FALLA):**
@@ -20,3 +20,20 @@
   - Un candidato que pase todos los gates se propone como decisión de ADR-011 (motor concreto) con su propio PR.
   - Un candidato que no pase se descarta con la evidencia pegada aquí (mismo patrón que ADR-010) y se prueba el siguiente de la cadena (B: Supertonic + OpenVoice V2).
   - El módulo `gates.py` queda como gate de regresión: si un futuro cambio empeora alguna métrica, se detecta re-corriendo el harness.
+
+## Evidencia — XTTS-v2 rechazado por TTFA (2026-09-08)
+
+**Entorno:** Ryzen 5 4600H / GTX 1650 Ti 4 GB / Windows. Motor: XTTS-v2 vía `coqui-tts` 0.27.5 (fork idiap), torch 2.14.0+cu132, en venv propio (venv-tts). ASR co-residente: faster-whisper tiny int8. Referencia de voz: `scripts/audio/voz_kevin.wav` (13 s, 16 kHz mono). Harness con `--warmup-audio`; `warm-up: 3 segmentos`, `delta VRAM (Whisper) = 110 MiB`.
+
+| Gate | Medido | Límite | Estado |
+|---|---|---|---|
+| TTFA síntesis completa (contrato no-streaming, p95 n=20) | **3574.6 ms** | < 400 ms | FALLA |
+| TTFA primer chunk (streaming real `inference_stream`, n=5) | rango **655–889 ms** (p95 no válido con n<20) | < 400 ms | FALLA |
+| VRAM co-residente (XTTS + Whisper) | 3010.9 MiB | < 3276.8 MiB | PASA |
+| RAM total (máquina) | 11804.9 MiB | < 18432 MiB | PASA |
+
+**Lectura honesta del TTFA:** el gate define TTFA = time to first audio; con el contrato no-streaming se mide la síntesis completa (3574 ms). XTTS soporta streaming (`inference_stream`, 6 chunks por frase) y el **primer chunk más rápido observado (655 ms) ya supera el límite por 60 %** — el rechazo no depende del `n` (no se reporta p95 con n=5; la regla del ADR exige n≥20). Las latents de condicionamiento (756 ms) se calculan una vez y no entran al presupuesto por turno (ADR-011).
+
+**Contexto de RAM (nota):** el valor 11804.9 MiB es el uso de TODA la máquina (`psutil.virtual_memory().used`) y **no se anotó qué había abierto** durante la corrida. Hoy sobra holgura (~6.6 GB), pero el candidato B puede quedar al filo: **las corridas futuras deben anotar el contexto** (navegador, Meet, etc.) como se hace con `nvidia-smi`.
+
+**Veredicto:** un bloqueante basta → **XTTS-v2 RECHAZADO** (sin cuantización agresiva). Sigue **Supertonic 3 CPU + OpenVoice V2 (candidato B)** — este ADR queda como gate de regresión y registro del go/no-go.
