@@ -403,18 +403,17 @@ def _medir_ttfa_primer_chunk_p95(
     return _medir_p95(partial(_primer_chunk_xtts, motor, texto, latentes), n, "ttfa")
 
 
-def _ventanas_pipeline(muestras: np.ndarray, sr: int) -> list[np.ndarray]:
-    """20 ventanas de ~3 s alineadas al habla (paso 0.5 s) para el pipeline.
+def _ventanas_pipeline(whisper: Any, muestras: np.ndarray, sr: int) -> list[np.ndarray]:
+    """Ventanas de 3 s DERIVADAS de la segmentación VAD real de la grabación.
 
-    EXCLUYE los inicios 8.5 s y 9.0 s de ESTA grabación: el decodificador
-    tarda 700-3100 ms en esas ventanas (artefacto medido y repetible del
-    contenido acústico, verificado: las ventanas adyacentes hacen 139-288 ms).
-    El VAD del flujo real segmenta en 0, 4.66 y 10.04 — los inicios excluidos
-    no existen en la entrada real (el flujo nunca recibe una ventana que
-    arranque a mitad de frase sin contexto). Las 20 ventanas del conjunto
-    están verificadas rápidas.
+    Criterio (corrección del PR #20, revisión del usuario): el conjunto sale
+    de los INICIOS de los segmentos VAD del corpus (0, 4.66 y 10.04 en esta
+    grabación), NO de la latencia medida. NINGUNA ventana se descarta por su
+    resultado: si una ventana derivada resultara lenta, se reporta (riesgo
+    abierto del decodificador, documentado en ADR-014 — no se excluye).
     """
-    inicios_s = [0.5 * i for i in range(17)] + [9.5, 10.0, 10.5]
+    segmentos, _ = whisper.transcribe(muestras, language="es")
+    inicios_s = [float(s.start) for s in segmentos]
     ventanas: list[np.ndarray] = []
     for inicio in inicios_s:
         a = int(inicio * sr)
@@ -448,10 +447,16 @@ def _medir_pipeline_p95(
     from traductor.traduccion.argos import traducir
 
     muestras, sr = sf.read(str(audio), dtype="float32")
-    ventanas = _ventanas_pipeline(muestras, sr)
+    ventanas = _ventanas_pipeline(whisper, muestras, sr)
+    if len(ventanas) < N_REPETICIONES:
+        print(
+            f"Pipeline: {len(ventanas)} ventanas VAD (corpus corto) — se ciclan "
+            f"para n={N_REPETICIONES}; las traducciones repetidas son cacheadas "
+            "por argos (el p95 resultante es optimista en la etapa de traducción)"
+        )
 
     def corte(i: int) -> np.ndarray:
-        return ventanas[i]
+        return ventanas[i % len(ventanas)]
 
     pa: Any = None
     salida: Any = None
