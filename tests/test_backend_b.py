@@ -270,10 +270,15 @@ def test_caches_src_se_y_target_se_por_perfil(
     assert sorted(extracciones) == ["ref1.wav", "refA.wav", "src_probe.wav"]
 
 
-def test_reenrolamiento_con_mismas_muestras_recalcula(
+def test_reenrolamiento_con_muestras_nuevas_recalcula(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Mismo perfil.id con grabaciones nuevas: el timbre se recalcula (ADR-013)."""
+    """Mismo perfil.id con grabaciones nuevas (rutas distintas): recalcula.
+
+    La clave del cache es (id, rutas): muestras nuevas → timbre nuevo. El caso
+    de SOBREESCRIBIR la misma ruta NO está cubierto: devuelve el timbre viejo
+    (limitación documentada en ADR-013).
+    """
     backend, _tts, _conv, extracciones, perfil, _ = _backend_con_fakes(monkeypatch, tmp_path)
     backend.sintetizar("One.", perfil)
     nueva = _escribir_wav(str(tmp_path / "ref1-nueva.wav"), SR_SUPERTONIC, array("h", [0] * 8000))
