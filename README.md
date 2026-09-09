@@ -206,7 +206,7 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 - [x] **Fase 2c — Benchmark ASR** — WER + p50/p95: faster-whisper vs moonshine (ADR-012, Propuesto)
 - [x] **Fase 2d — Worker TTS + enrolamiento** — worker aislado + tienda JSON (ADR-013, Propuesto)
 - [x] **Fase 2e — Gates TTS** — 9 gates del go/no-go: TTFA, VRAM, RAM, pipeline, OOM, memoria, artefactos, A/B, endurance (ADR-014, Propuesto)
-- [x] **Fase 2f — Go/no-go del motor TTS** — **XTTS-v2 ACEPTADO por los gates medidos** del [ADR-014](docs/ADR-014-gates-aceptacion-tts.md): pipeline end-to-end **p50 1259.6 ms < 2000 ms** (rango 1237.0-1469.3 en 4 corridas con segmentos VAD completos, 0 sobre el límite), 100 % atribuido por fronteras; aprobación final condicionada a los gates de sesión (ADR-019). Candidato B (Supertonic 3 + OpenVoice V2) **rechazado** por TTFA arquitectural (7885.8 ms)
+- [x] **Fase 2f — Go/no-go del motor TTS** — **XTTS-v2 ACEPTADO por los gates medidos** del [ADR-014](docs/ADR-014-gates-aceptacion-tts.md): pipeline end-to-end **peor caso 1469.3 ms < 2000 ms** (rango 1237.0-1469.3 en 4 corridas con segmentos VAD completos, margen 531 ms), 100 % atribuido por fronteras; aprobación final condicionada a los gates de sesión (ADR-019). Candidato B (Supertonic 3 + OpenVoice V2) **rechazado** por TTFA arquitectural (7885.8 ms)
 - [x] **Fase 2g — Motor TTS elegido** — XTTS-v2 aceptado por los gates medidos (ADR-014, Fase 2f); la aprobación FINAL queda condicionada a los gates de sesión del [ADR-019](docs/ADR-019-endurance-sesion.md) (OOM, memoria, artefactos, A/B, endurance 90 min)
 - [ ] **Fase 3 — Conversión de voz** — timbre de Kevin (el motor ya está elegido, Fase 2g; el timbre se firma en el A/B de sesión del ADR-019)
 
