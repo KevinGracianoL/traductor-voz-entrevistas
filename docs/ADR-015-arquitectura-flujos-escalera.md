@@ -1,4 +1,4 @@
-# ADR-015 - Arquitectura por flujos y escalera de presupuesto (Propuesto)
+﻿# ADR-015 - Arquitectura por flujos y escalera de presupuesto (Propuesto)
 
 - **Estado:** Propuesto (2026-09-08) — dirección de arquitectura decidida (decisión de Hal, PR #16); implementación en los PRs de flujo (#17+).
 - **Contexto:** el prototipo lineal (audio → VAD → ASR → traducción → TTS → audio) no distingue las dos direcciones reales de la llamada, ni protege contra el artefacto que sale al micrófono virtual. La decisión de producción: **el requisito importante es que la otra persona oiga la VOZ de Kevin hablando inglés**; la voz del entrevistador en español arranca por subtítulos y el clon dinámico es opcional.
@@ -13,6 +13,7 @@
   - **Cancelación:** una solicitud nueva cancela la antigua (interrupción de síntesis al empezar un nuevo turno).
   - El audio sintetizado **no vuelve a entrar al micrófono**; botón de corte inmediato; fallback a texto o voz fija.
   - **Timestamps por etapa** (reloj inyectable, patrón de `latencia.medidor`).
+    - **Precarga obligatoria en el arranque (requisito BLOQUEANTE, evidencia ADR-014):** el modelo spacy mwt que argos descarga on-demand debe estar precargado y la traduccion es->en debe validarse sin red ANTES de aceptar una llamada (1 de 20 corridas del harness murio por esa descarga). Un worker de traduccion que no pasa el arranque offline NO entra al flujo.
   - **Watchdog por worker** y degradación automática **sin reiniciar la llamada**.
   - Distribución de hardware: Ryzen (Moonshine/Argos/VAD/app) · GTX 1650 Ti (exclusivamente XTTS) · Radeon integrada (navegador/cámara/Meet) · RAM (modelos y workers).
 - **Escalera de presupuesto (degradación sin reinicio):**
