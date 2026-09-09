@@ -41,7 +41,6 @@ from traductor.tts.harness import (
 )
 from traductor.tts.modelos import VoiceProfile
 
-TEXTO = "hola, esto es una prueba del motor de voz"
 N_REPETICIONES = 20
 # Piso para la auto-verificación de Whisper. tiny int8 son decenas de MB de
 # pesos; el bulto del contexto CUDA ya existe en vram_base. 50 es conservador,

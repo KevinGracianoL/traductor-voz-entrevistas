@@ -206,8 +206,9 @@ texto, ms = medir_tiempo(lambda: traducir("hello", "en", "es"), clock=time.perf_
 - [x] **Fase 2c — Benchmark ASR** — WER + p50/p95: faster-whisper vs moonshine (ADR-012, Propuesto)
 - [x] **Fase 2d — Worker TTS + enrolamiento** — worker aislado + tienda JSON (ADR-013, Propuesto)
 - [x] **Fase 2e — Gates TTS** — 9 gates del go/no-go: TTFA, VRAM, RAM, pipeline, OOM, memoria, artefactos, A/B, endurance (ADR-014, Propuesto)
-- [x] **Fase 2f — Go/no-go del motor TTS** — XTTS-v2 **rechazado** por TTFA (3574 ms y 655–889 ms primer chunk vs < 400 ms) y candidato B (Supertonic 3 + OpenVoice V2) **rechazado** por TTFA (7885.8 ms) — evidencia y números en [ADR-014](docs/ADR-014-gates-aceptacion-tts.md); la escalera del ADR-015 (voz genérica + subtítulos) guía el flujo
-- [ ] **Fase 3 — Conversión de voz** — timbre de Kevin (condicionada a un motor que pase los gates del ADR-014)
+- [x] **Fase 2f — Go/no-go del motor TTS** — XTTS-v2 **rechazado** por TTFA (3574 ms y 655–889 ms primer chunk vs < 400 ms) y candidato B (Supertonic 3 + OpenVoice V2) **rechazado** por TTFA (7885.8 ms) — evidencia y números en [ADR-014](docs/ADR-014-gates-aceptacion-tts.md)
+- [ ] **Fase 2g — Motor TTS que pase los gates** — **ningún motor pasa hoy**: ni los clones (XTTS ✗, B ✗, Pocket descartado) ni la voz genérica Supertonic sola (~1.75 s por fragmento > 400 ms); este ítem rastrea el hueco y el flujo arranca por la escalera del ADR-015 (nivel 3: voz genérica + subtítulos)
+- [ ] **Fase 3 — Conversión de voz** — timbre de Kevin (condicionada a un motor que pase los gates del ADR-014, Fase 2g)
 
 ---
 

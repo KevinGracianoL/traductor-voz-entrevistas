@@ -25,7 +25,6 @@ from typing import Any
 
 from traductor.tts.modelos import AudioResult, Salud, VoiceProfile
 
-SR_B = 22050  # sample rate de salida del converter de OpenVoice V2
 VOZ_SUPERTONIC = "M1"  # voz fija del generador base (10 presets: M1-M5, F1-F5)
 TEXTO_PROBE = (
     "This is a voice profile probe. It contains enough speech for the style extractor to work."
@@ -44,6 +43,14 @@ class BackendB:
         idioma_salida: str = "en",
     ) -> None:
         self._dir_checkpoints = Path(dir_checkpoints)
+        config = self._dir_checkpoints / "converter" / "config.json"
+        ckpt = self._dir_checkpoints / "converter" / "checkpoint.pth"
+        if not config.is_file() or not ckpt.is_file():
+            raise RuntimeError(
+                f"pesos de OpenVoice V2 incompletos en {self._dir_checkpoints}: "
+                "faltan converter/config.json o converter/checkpoint.pth "
+                "(define OPENVOICE_CHECKPOINTS_V2)"
+            )
         self._voz = voz
         self._device = device
         self._idioma_salida = idioma_salida
@@ -51,7 +58,7 @@ class BackendB:
         self._estilo: Any | None = None
         self._conversor: Any | None = None
         self._src_se_cache: Any | None = None
-        self._se_por_perfil: dict[str, Any] = {}
+        self._se_por_perfil: dict[tuple[str, tuple[str, ...]], Any] = {}
 
     def _cargar_supertonic(self) -> Any:  # pragma: no cover - requiere supertonic
         """Carga el generador base una sola vez (lazy). Raises: RuntimeError."""
@@ -115,21 +122,24 @@ class BackendB:
         return self._src_se_cache
 
     def _target_se(self, perfil: VoiceProfile, conv: Any, dir_trabajo: Path) -> Any:
-        """Timbre de `perfil`: cacheado por perfil.id.
+        """Timbre de `perfil`: cacheado por (id, muestras).
 
-        Una muestra: su timbre directo (el caso del harness). Varias: media de
-        embeddings torch (ADR-011 pre-enrola 3-5 grabaciones) — se cubre en la
-        máquina objetivo, no en CI.
+        La clave incluye las muestras: si el perfil se re-enrola con
+        grabaciones nuevas (worker de vida larga, ADR-013), el timbre se
+        recalcula en vez de devolver el viejo en silencio. Una muestra: su
+        timbre directo; varias: media de embeddings torch (ADR-011 pre-enrola
+        3-5 grabaciones) — se cubre en la máquina objetivo, no en CI.
         """
-        if perfil.id not in self._se_por_perfil:
+        clave = (perfil.id, perfil.muestras)
+        if clave not in self._se_por_perfil:
             ses = [self._extraer_se(Path(m), conv, dir_trabajo) for m in perfil.muestras]
             if len(ses) == 1:
-                self._se_por_perfil[perfil.id] = ses[0]
+                self._se_por_perfil[clave] = ses[0]
             else:  # pragma: no cover - media torch: solo con 2+ muestras reales
                 import torch
 
-                self._se_por_perfil[perfil.id] = torch.stack(ses).mean(0)
-        return self._se_por_perfil[perfil.id]
+                self._se_por_perfil[clave] = torch.stack(ses).mean(0)
+        return self._se_por_perfil[clave]
 
     def sintetizar(self, texto: str, perfil: VoiceProfile) -> AudioResult:
         """Sintetiza `texto` con el timbre de `perfil.muestras`.

@@ -23,10 +23,19 @@ from typing import Any
 import pytest
 
 from traductor.tts.backend import TTSBackend
-from traductor.tts.backend_b import SR_B, TEXTO_PROBE, VOZ_SUPERTONIC, BackendB
+from traductor.tts.backend_b import TEXTO_PROBE, VOZ_SUPERTONIC, BackendB
 from traductor.tts.modelos import VoiceProfile
 
 SR_SUPERTONIC = 44100
+
+
+def _checkpoints(tmp_path: Path) -> str:
+    """Dir de pesos mínimo para construir BackendB (validado en __init__)."""
+    converter = tmp_path / "checkpoints" / "converter"
+    converter.mkdir(parents=True)
+    (converter / "config.json").write_text("{}", encoding="utf-8")
+    (converter / "checkpoint.pth").write_bytes(b"pesos")
+    return str(tmp_path / "checkpoints")
 
 
 def _escribir_wav(path: str, sr: int, muestras: Any) -> Path:
@@ -91,7 +100,7 @@ class _ConversorFake:
 def _backend_con_fakes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> tuple[BackendB, _TtsFake, _ConversorFake, list[str], VoiceProfile, VoiceProfile]:
-    backend = BackendB(dir_checkpoints="checkpoints_v2")
+    backend = BackendB(dir_checkpoints=_checkpoints(tmp_path))
     tts = _TtsFake()
     conv = _ConversorFake()
     extracciones: list[str] = []
@@ -118,13 +127,14 @@ def _backend_con_fakes(
     return backend, tts, conv, extracciones, perfil, perfil_2
 
 
-def test_backend_satisface_el_contrato() -> None:
-    assert isinstance(BackendB(dir_checkpoints="x"), TTSBackend)
+def test_backend_satisface_el_contrato(tmp_path: Path) -> None:
+    assert isinstance(BackendB(dir_checkpoints=_checkpoints(tmp_path)), TTSBackend)
 
 
-def test_defaults_de_construccion() -> None:
-    backend = BackendB(dir_checkpoints="x")
-    assert backend._dir_checkpoints == Path("x")
+def test_defaults_de_construccion(tmp_path: Path) -> None:
+    dir_checkpoints = _checkpoints(tmp_path)
+    backend = BackendB(dir_checkpoints=dir_checkpoints)
+    assert backend._dir_checkpoints == Path(dir_checkpoints)
     assert backend._voz == "M1"
     assert backend._device == "cpu"
     assert backend._idioma_salida == "en"
@@ -135,43 +145,58 @@ def test_defaults_de_construccion() -> None:
     assert backend._se_por_perfil == {}
 
 
-def test_verificar_salud_sin_motores_reporta_indisponible() -> None:
+def test_construccion_valida_pesos_temprano(tmp_path: Path) -> None:
+    """Sin los pesos de OpenVoice el error es claro en __init__, no dentro del
+    converter (el DIR_CHECKPOINTS_B del script es un default de máquina)."""
+    with pytest.raises(
+        RuntimeError,
+        match=r"^pesos de OpenVoice V2 incompletos en .*: faltan converter/",
+    ):
+        BackendB(dir_checkpoints=str(tmp_path / "sin-pesos"))
+    solo_config = tmp_path / "solo-config"
+    (solo_config / "converter").mkdir(parents=True)
+    (solo_config / "converter" / "config.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="checkpoint.pth"):
+        BackendB(dir_checkpoints=str(solo_config))
+
+
+def test_verificar_salud_sin_motores_reporta_indisponible(tmp_path: Path) -> None:
     """En CI (sin supertonic/openvoice) el healthcheck es honesto: False+detalle."""
-    salud = BackendB(dir_checkpoints="x").verificar_salud()
+    salud = BackendB(dir_checkpoints=_checkpoints(tmp_path)).verificar_salud()
     assert salud.disponible is False
     assert salud.detalle.startswith("supertonic no instalado: ")
 
 
 def test_verificar_salud_sin_openvoice_reporta_indisponible(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """supertonic instalado pero openvoice no (estado actual de venv-tts)."""
     monkeypatch.setitem(sys.modules, "supertonic", object())
-    salud = BackendB(dir_checkpoints="x").verificar_salud()
+    salud = BackendB(dir_checkpoints=_checkpoints(tmp_path)).verificar_salud()
     assert salud.disponible is False
     assert salud.detalle.startswith("openvoice no instalado: ")
 
 
 def test_verificar_salud_medio_cargado_reporta_indisponible(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Solo UNO de los dos modelos cargado: sigue siendo no disponible (or, no and)."""
-    backend = BackendB(dir_checkpoints="x")
+    backend = BackendB(dir_checkpoints=_checkpoints(tmp_path))
     backend._conversor = object()
     salud = backend.verificar_salud()
     assert salud.disponible is False
     assert "no instalado" in salud.detalle
 
 
-def test_verificar_salud_no_carga_los_modelos() -> None:
-    backend = BackendB(dir_checkpoints="x")
+def test_verificar_salud_no_carga_los_modelos(tmp_path: Path) -> None:
+    backend = BackendB(dir_checkpoints=_checkpoints(tmp_path))
     backend.verificar_salud()
     assert backend._tts is None
     assert backend._conversor is None
 
 
-def test_verificar_salud_con_modelos_cargados() -> None:
-    backend = BackendB(dir_checkpoints="x")
+def test_verificar_salud_con_modelos_cargados(tmp_path: Path) -> None:
+    backend = BackendB(dir_checkpoints=_checkpoints(tmp_path))
     backend._tts = object()
     backend._estilo = object()
     backend._conversor = object()
@@ -180,8 +205,8 @@ def test_verificar_salud_con_modelos_cargados() -> None:
     assert VOZ_SUPERTONIC in salud.detalle
 
 
-def test_sintetizar_sin_motores_error_claro() -> None:
-    backend = BackendB(dir_checkpoints="x")
+def test_sintetizar_sin_motores_error_claro(tmp_path: Path) -> None:
+    backend = BackendB(dir_checkpoints=_checkpoints(tmp_path))
     perfil = VoiceProfile(id="x", nombre="X", muestras=("r.wav",))
     with pytest.raises(
         RuntimeError,
@@ -193,8 +218,8 @@ def test_sintetizar_sin_motores_error_claro() -> None:
         backend.sintetizar("hello", perfil)
 
 
-def test_cerrar_idempotente() -> None:
-    backend = BackendB(dir_checkpoints="x")
+def test_cerrar_idempotente(tmp_path: Path) -> None:
+    backend = BackendB(dir_checkpoints=_checkpoints(tmp_path))
     backend.cerrar()
     backend.cerrar()
     assert backend._tts is None
@@ -203,7 +228,6 @@ def test_cerrar_idempotente() -> None:
 
 
 def test_constantes_del_candidato_b() -> None:
-    assert SR_B == 22050
     assert VOZ_SUPERTONIC == "M1"
     assert TEXTO_PROBE
 
@@ -244,6 +268,18 @@ def test_caches_src_se_y_target_se_por_perfil(
     backend.sintetizar("Three.", perfil_2)
     # src_se: 1 extracción (probe) + target: 1 por perfil (kevin, otro)
     assert sorted(extracciones) == ["ref1.wav", "refA.wav", "src_probe.wav"]
+
+
+def test_reenrolamiento_con_mismas_muestras_recalcula(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Mismo perfil.id con grabaciones nuevas: el timbre se recalcula (ADR-013)."""
+    backend, _tts, _conv, extracciones, perfil, _ = _backend_con_fakes(monkeypatch, tmp_path)
+    backend.sintetizar("One.", perfil)
+    nueva = _escribir_wav(str(tmp_path / "ref1-nueva.wav"), SR_SUPERTONIC, array("h", [0] * 8000))
+    reenrolado = VoiceProfile(id=perfil.id, nombre=perfil.nombre, muestras=(str(nueva),))
+    backend.sintetizar("Two.", reenrolado)
+    assert sorted(extracciones) == ["ref1-nueva.wav", "ref1.wav", "src_probe.wav"]
 
 
 def test_cerrar_limpia_caches(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
