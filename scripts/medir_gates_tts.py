@@ -61,10 +61,6 @@ DELTA_WHISPER_MIN_MIB = 50.0
 # reproducir la medición en otra máquina sin tocar el código.
 DIR_CHECKPOINTS_B = r"C:\Users\Kevin\deps\OpenVoice\checkpoints_v2"
 TEXTO_TRADUCCION = "Mi experiencia mas fuerte es con sistemas distribuidos."
-# Salida CORRECTA verificada: argos es→en produce basura si ARGOS_COMPUTE_TYPE
-# NO está en "default" — el wrapper del proyecto (traductor.traduccion.argos)
-# ya lo fija; el sanity guarda contra un stack genuinamente roto.
-TRADUCCION_ESPERADA = "my strongest experience is with distributed systems"
 # argos 1.11 cachea el MISMO texto (la misma frase da 0.0 ms): la medición usa
 # frases DISTINTAS, como los turnos reales del flujo.
 FRASES_TRADUCCION = (
@@ -189,7 +185,12 @@ def _medir_traduccion_p95(n: int) -> float | None:
     from traductor.traduccion.argos import traducir
 
     salida = _normalizar(traducir(TEXTO_TRADUCCION, "es", "en"))
-    if "distributed systems" not in salida or len(salida) > 80:
+    palabras = salida.split()
+    if (
+        "distributed systems" not in salida
+        or len(salida) > 80
+        or max(palabras.count(p) for p in set(palabras)) > 3
+    ):  # repetida patologicamente (el bucle "mainstream" repite la misma palabra)
         print(f"Traducción es→en ROTA (salida {salida[:60]!r}): etapa no medible (FALLA por regla)")
         return None
     if len(FRASES_TRADUCCION) < n:
