@@ -52,7 +52,7 @@ class BackendXtts:
                     "(venv propio del TTS, ver ADR-011/014)"
                 ) from exc
             try:
-                self._tts = TTS(MODELO_XTTS, device="cuda")
+                self._tts = TTS(MODELO_XTTS, gpu=True)
             except Exception as exc:
                 raise RuntimeError(f"XTTS-v2 no cargó: {exc}") from exc
         return self._tts
