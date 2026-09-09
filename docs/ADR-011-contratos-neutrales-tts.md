@@ -19,4 +19,4 @@
 - **Consecuencias:**
   - Los fakes de los tests prueban que el contrato es satisfacible; el motor real (XTTS-v2 o B) se inyecta y se decide con los gates del ADR-014 — **decidido: XTTS-v2 ACEPTADO por los gates medidos** (pipeline 1237.0-1469.3 ms < 2000 ms con 100 % atribuido, evidencia en ADR-014 quinta capa); sesión pendiente (ADR-019).
   - La dirección EN→ES (escuchar) arranca por **subtítulos**; el clon de la voz del entrevistador es opcional y solo se habilita si las muestras recogidas pasan los controles (ADR-015). Estos contratos cubren ES→EN (hablar) primero.
-  - La clonación de la voz de Kevin (Fase 3 del roadmap) queda **condicionada a un motor que pase los gates** (Fase 2g); la optimización propuesta para re-abrir XTTS: ASR primero (762 ms vs 300 ms supuestos), no el TTS.
+  - La clonación de la voz de Kevin (Fase 3 del roadmap) ya tiene motor (XTTS-v2, Fase 2g/2f): lo que falta es la firma de los gates de sesión (ADR-019). Si en la corrida larga el ASR resultara el cuello (762 ms aislado vs 300 ms supuestos en el protocolo anterior; 234-256 ms encadenado con segmentos VAD completos), la optimización propuesta apuntaría al ASR, no al TTS.
