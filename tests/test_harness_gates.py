@@ -40,6 +40,9 @@ def test_parser_help_explica_flags() -> None:
         "WAV de voz real para el warm-up de Whisper (obligatorio: sin el "
         "decoder ejercitado la VRAM subestima y el harness hace raise)"
     )
+    assert helps["referencia"] == (
+        "Muestras de referencia para el perfil TTS (default: --warmup-audio)"
+    )
     assert helps["pipeline_p95"] == "Pipeline warm p95 en ms, de la corrida de flujo (ADR-015)"
     assert helps["oom"] == "la corrida larga registró OOM (True = FALLA)"
     assert helps["memoria_estable"] == "la memoria no creció sostenidamente (True = PASA)"
