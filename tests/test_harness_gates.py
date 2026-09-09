@@ -7,6 +7,7 @@ bloqueante: solo sabía decir no-go).
 """
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ import pytest
 from traductor.tts.gates import cabe_en_gates
 from traductor.tts.harness import (
     TEXTO_POR_DEFECTO,
+    RegistroEtapas,
     _bytes_a_mib,
     componer_medicion,
     medir_ram_mib,
@@ -253,3 +255,84 @@ def test_verificar_ruteo_falla_si_no_mide_nada() -> None:
         verificar_ruteo_primer_sample(-5.0, 1000.0)
     with pytest.raises(RuntimeError, match="cero"):
         verificar_ruteo_primer_sample(None, 1000.0)
+
+
+def _reloj_falso(ticks: list[float]) -> Callable[[], float]:
+    import itertools
+
+    secuencia = itertools.chain(ticks, [ticks[-1]] * 1000)
+
+    def reloj() -> float:
+        return next(secuencia)
+
+    return reloj
+
+
+def test_registro_etapas_desglose_suma_al_total() -> None:
+    """Las marcas consecutivas cierran el total EXACTO (reloj inyectable)."""
+    reloj = _reloj_falso([0.0, 0.1, 0.3, 0.6])
+    r = RegistroEtapas(clock=reloj)
+    r.marcar("entrada")
+    r.marcar("asr")
+    r.marcar("traduccion")
+    r.marcar("tts")
+    desglose = r.desglose_ms()
+    # cada delta pertenece a la etapa que TERMINÓ (la segunda marca del par)
+    assert desglose["asr"] == pytest.approx(100.0)
+    assert desglose["traduccion"] == pytest.approx(200.0)
+    assert desglose["tts"] == pytest.approx(300.0)
+    assert sum(desglose.values()) == pytest.approx(600.0)  # == total (0.6 - 0.0)
+    assert r.total_ms() == pytest.approx(600.0)  # última marca - primera marca
+    r.verificar_cierre(600.0)  # 100 % atribuido
+
+
+def test_registro_etapas_cierre_incorrecto_raise() -> None:
+    """Un total que no cierra con la suma de las etapas es un hueco sin atribuir."""
+    reloj = _reloj_falso([0.0, 0.1])
+    r = RegistroEtapas(clock=reloj)
+    r.marcar("entrada")
+    r.marcar("asr")
+    with pytest.raises(
+        RuntimeError,
+        match=r"residuo sin atribuir: 400\.000 ms \(etapas suman 100\.000 ms, total 500\.000 ms\)",
+    ):
+        r.verificar_cierre(500.0)  # las etapas suman 100 ms, el total dice 500
+
+
+def test_registro_etapas_cierre_desvio_intermedio_raise() -> None:
+    """Un desvío entre el épsilon y 1 ms (0.5 ms) también es un hueco sin atribuir."""
+    reloj = _reloj_falso([0.0, 0.0005])
+    r = RegistroEtapas(clock=reloj)
+    r.marcar("entrada")
+    r.marcar("asr")
+    with pytest.raises(RuntimeError, match="residuo sin atribuir: 0.500"):
+        r.verificar_cierre(1.0)  # las etapas suman 0.5 ms, el total dice 1.0 ms
+
+
+def test_registro_etapas_total_con_dos_marcas() -> None:
+    """2 marcas = intervalo real (el mutante '<= 2' / '< 3' daría 0.0)."""
+    reloj = _reloj_falso([2.0, 2.75])
+    r = RegistroEtapas(clock=reloj)
+    r.marcar("entrada")
+    r.marcar("asr")
+    assert r.total_ms() == pytest.approx(750.0)
+    assert r.inicio_s() == 2.0
+
+
+def test_registro_etapas_vacio() -> None:
+    r = RegistroEtapas(clock=_reloj_falso([1.0]))
+    assert r.desglose_ms() == {}
+    assert r.total_ms() == 0.0
+    assert r.inicio_s() == 1.0  # sin marcas: devuelve el reloj actual
+    r.marcar("entrada")
+    assert r.total_ms() == 0.0  # una sola marca: sin intervalo
+    assert r.inicio_s() == 1.0  # la primera marca es la referencia
+
+
+def test_registro_etapas_inicio_s() -> None:
+    reloj = _reloj_falso([5.0, 5.2, 5.9])
+    r = RegistroEtapas(clock=reloj)
+    r.marcar("entrada")
+    assert r.inicio_s() == 5.0
+    r.marcar("asr")
+    assert r.inicio_s() == 5.0  # sigue siendo la primera marca

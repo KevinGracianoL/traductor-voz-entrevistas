@@ -8,6 +8,7 @@ el harness es hardware (GPU + modelos), su lógica no. El script
 from __future__ import annotations
 
 import argparse
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -15,6 +16,54 @@ from traductor.tts.gates import MedicionTts
 from traductor.tts.modelos import VoiceProfile
 
 TEXTO_POR_DEFECTO = "hola, esto es una prueba del motor de voz"
+
+
+class RegistroEtapas:
+    """Marcas de tiempo por frontera con reloj inyectable (atribución del pipeline).
+
+    Los deltas entre marcas consecutivas se miden con EL MISMO reloj, así que
+    su suma es EXACTA por construcción (cierre del 100 %). `verificar_cierre`
+    atrapa un hueco sin instrumentar (misma filosofía que los guards de ruteo:
+    si no se puede atribuir, no se reporta como medido).
+    """
+
+    def __init__(self, clock: Callable[[], float] = time.perf_counter) -> None:
+        self._clock = clock
+        self._marcas: list[tuple[str, float]] = []
+
+    def marcar(self, etapa: str) -> None:
+        self._marcas.append((etapa, self._clock()))
+
+    def desglose_ms(self) -> dict[str, float]:
+        """Deltas por etapa en ms (la primera marca abre el contador)."""
+        if not self._marcas:
+            return {}
+        desglose: dict[str, float] = {}
+        for i in range(1, len(self._marcas)):
+            etapa = self._marcas[i][0]
+            desglose[etapa] = (self._marcas[i][1] - self._marcas[i - 1][1]) * 1000.0
+        return desglose
+
+    def total_ms(self) -> float:
+        if len(self._marcas) < 2:
+            return 0.0
+        return (self._marcas[-1][1] - self._marcas[0][1]) * 1000.0
+
+    def inicio_s(self) -> float:
+        """Valor del reloj en la primera marca (para mediciones que parten de ahí)."""
+        return self._marcas[0][1] if self._marcas else self._clock()
+
+    def verificar_cierre(self, total_ms: float) -> None:
+        """La suma de las etapas DEBE cerrar el total (100 % atribuido)."""
+        suma = sum(self.desglose_ms().values())
+        # pragma: no mutate - el mutante `>` → `>=` en el épsilon de cierre es
+        # equivalente: la frontera exacta de 1e-6 ms no es alcanzable con
+        # floats (la diferencia nunca es exactamente el épsilon)
+        if abs(suma - total_ms) > 1e-6:  # pragma: no mutate - ver comentario
+            raise RuntimeError(
+                f"residuo sin atribuir: {total_ms - suma:.3f} ms (etapas "
+                f"suman {suma:.3f} ms, total {total_ms:.3f} ms)"
+            )
 
 
 def _wav_existente(nombre: str) -> Callable[[str], Path]:

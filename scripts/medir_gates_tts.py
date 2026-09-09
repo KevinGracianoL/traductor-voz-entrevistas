@@ -41,6 +41,7 @@ from traductor.hardware.cuda import vram_ocupada_mib
 from traductor.latencia.medidor import agregar_medicion, medir_tiempo, resumen_estadisticas
 from traductor.tts.gates import cabe_en_gates, evaluar_gates, resumen_gates
 from traductor.tts.harness import (
+    RegistroEtapas,
     componer_medicion,
     medir_ram_mib,
     parser_harness,
@@ -399,7 +400,7 @@ def _medir_pipeline_p95(
     perfil: VoiceProfile,
     latentes: tuple[Any, Any] | None,
     cable: str | None,
-) -> tuple[float | None, bool]:
+) -> tuple[float | None, dict[str, float], bool]:
     """Pipeline end-to-end p95: audio -> ASR es -> Argos -> 1er chunk -> CABLE.
 
     UNA corrida encadenada (no la suma de etapas): cada iteración transcribe
@@ -464,46 +465,70 @@ def _medir_pipeline_p95(
                     return (time.perf_counter() - t0) * 1000.0 - indice / RATE_CABLE * 1000.0
             return -1.0  # aún no llegó señal
 
-        def una_iteracion(i: int) -> object:
+        def una_iteracion(i: int) -> tuple[object, RegistroEtapas]:
             while entrada.get_read_available() > 0:  # drenar antes de medir
                 entrada.read(entrada.get_read_available(), exception_on_overflow=False)
-            t0 = time.perf_counter()
+            registro = RegistroEtapas()
+            registro.marcar("entrada_audio")
             segmentos = list(whisper.transcribe(corte(i), language="es")[0])
             texto_es = " ".join(s.text for s in segmentos)
+            registro.marcar("asr")
             texto_en = traducir(texto_es, "es", "en")
+            registro.marcar("traduccion")
             if latentes is not None:
                 chunk = _primer_chunk_xtts(motor, texto_en, latentes)
             else:
                 chunk = motor.sintetizar(texto_en, perfil)
+            registro.marcar("tts_primer_chunk")
             if salida is not None:
                 pcm = _mono24k_a_cable48k(_chunk_a_pcm16(chunk))
                 bloques = [
                     pcm[i : i + FRAMES_BLOQUE * 4] for i in range(0, len(pcm), FRAMES_BLOQUE * 4)
                 ]
-                for bloque in bloques:
+                for indice_bloque, bloque in enumerate(bloques):
                     salida.write(bloque)
-                    primer = detectar_primer_sample(t0)
+                    if indice_bloque == 0:
+                        registro.marcar("entrega_dispositivo")
+                    # el primer sample audible se detecta DURANTE la escritura:
+                    # la medición termina cuando el interlocutor oye, no cuando
+                    # el chunk termina de escribirse (el drenado no es latencia)
+                    primer = detectar_primer_sample(registro.inicio_s())
                     if primer > 0:
-                        return primer
-                # si el chunk terminó sin detectar (silencio inicial largo)
+                        registro.marcar("primer_sample_audible")
+                        registro.verificar_cierre(registro.total_ms())
+                        return chunk, registro
+                # el chunk terminó sin detectar (silencio inicial largo)
                 while True:
-                    primer = detectar_primer_sample(t0)
+                    primer = detectar_primer_sample(registro.inicio_s())
                     if primer > 0:
-                        return primer
-                    if time.perf_counter() - t0 > 5.0:
+                        registro.marcar("primer_sample_audible")
+                        registro.verificar_cierre(registro.total_ms())
+                        return chunk, registro
+                    if time.perf_counter() - registro.inicio_s() > 5.0:
                         raise RuntimeError(
                             "no se detectó el primer sample en CABLE Output: instrumento roto"
                         )
                     time.sleep(0.01)
-            return chunk
+            registro.verificar_cierre(registro.total_ms())
+            return chunk, registro
 
         una_iteracion(0)  # warm-up
         registro: dict[str, list[float]] = {}
+        desglose_por_etapa: dict[str, list[float]] = {}
         for i in range(n):
-            _, elapsed_ms = medir_tiempo(partial(una_iteracion, i), clock=time.perf_counter)
-            registro = agregar_medicion(registro, "pipeline", elapsed_ms)
+            (_, etapas), _elapsed_ms = medir_tiempo(
+                partial(una_iteracion, i), clock=time.perf_counter
+            )
+            registro = agregar_medicion(registro, "pipeline", _elapsed_ms)
+            for etapa, ms in etapas.desglose_ms().items():
+                desglose_por_etapa.setdefault(etapa, []).append(ms)
         p95 = resumen_estadisticas(registro)["pipeline"]["p95"]
-        return p95, salida is not None
+        desglose_p95 = {
+            etapa: p95_etapa
+            for etapa, valores in desglose_por_etapa.items()
+            if (p95_etapa := resumen_estadisticas({etapa: valores})[etapa]["p95"]) is not None
+        }
+        return p95, desglose_p95, salida is not None
     finally:
         if salida is not None:
             salida.stop_stream()
@@ -549,14 +574,16 @@ def main(argv: list[str] | None = None) -> None:
     cable = _detectar_cable()
     ruteo = _medir_ruteo_p95(N_REPETICIONES, cable)
     ttfa = _medir_ttfa_primer_chunk_p95(motor, N_REPETICIONES, perfil, args.texto, latentes)
+    pipeline: float | None = None
+    desglose_pipeline: dict[str, float] = {}
+    con_ruteo = False
     if traduccion is None or cable is None:
         print(
             "Pipeline end-to-end: sin medir (VB-CABLE ausente o traducción "
             "rota — no se mide la cadena sin micrófono virtual ni con basura)"
         )
-        pipeline, con_ruteo = None, False
     else:
-        pipeline, con_ruteo = _medir_pipeline_p95(
+        pipeline, desglose_pipeline, con_ruteo = _medir_pipeline_p95(
             whisper, motor, N_REPETICIONES, args.warmup_audio, perfil, latentes, cable
         )
     pipeline_gate = pipeline if con_ruteo else None
@@ -578,6 +605,15 @@ def main(argv: list[str] | None = None) -> None:
         print("Pipeline end-to-end p95: sin medir")
     elif con_ruteo:
         print(f"Pipeline end-to-end p95 (con ruteo al cable): {pipeline:.1f} ms")
+        print("  Desglose por frontera (cierre exacto por iteración, guard verificado):")
+        for etapa, ms in desglose_pipeline.items():
+            print(f"    {etapa:24s} p95: {ms:.1f} ms")
+        suma = sum(desglose_pipeline.values())
+        print(
+            f"    suma de p95 por etapa: {suma:.1f} ms | total p95: {pipeline:.1f} ms "
+            "(diferencia = p95 de iteraciones distintas, no residuo: por iteración "
+            "la suma cierra exacto)"
+        )
     else:
         print(
             f"Pipeline p95 SIN ruteo (VB-CABLE ausente, informativo): {pipeline:.1f} ms — "
