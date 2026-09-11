@@ -209,21 +209,26 @@ def test_segmentos_concurrentes_no_pierden_turnos() -> None:
     import sys
     import threading
 
+    # el switch interval es estado global del intérprete: se restaura SIEMPRE
+    intervalo_anterior = sys.getswitchinterval()
     sys.setswitchinterval(1e-6)  # forzar interleavings (runner cargado)
-    flujo, _teleprompter, salida = _flujo()
+    try:
+        flujo, _teleprompter, salida = _flujo()
 
-    def despachar() -> None:
-        for _ in range(50):
-            flujo.segmento_final("texto")
+        def despachar() -> None:
+            for _ in range(50):
+                flujo.segmento_final("texto")
 
-    h1 = threading.Thread(target=despachar)
-    h2 = threading.Thread(target=despachar)
-    h1.start()
-    h2.start()
-    h1.join()
-    h2.join()
-    assert flujo._numero_turno == 100  # el lock no pierde incrementos
-    assert len(salida.reproducidos) <= 100  # los superados se descartan
+        h1 = threading.Thread(target=despachar)
+        h2 = threading.Thread(target=despachar)
+        h1.start()
+        h2.start()
+        h1.join()
+        h2.join()
+        assert flujo._numero_turno == 100  # el lock no pierde incrementos
+        assert len(salida.reproducidos) <= 100  # los superados se descartan
+    finally:
+        sys.setswitchinterval(intervalo_anterior)
 
 
 def test_validar_arranque_pasa_con_traduccion_sana() -> None:
