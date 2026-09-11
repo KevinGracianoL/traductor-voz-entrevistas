@@ -17,9 +17,10 @@ Reglas del ADR-015 implementadas aquí:
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
 from traductor.tts.harness import RegistroEtapas
 from traductor.tts.modelos import Salud
@@ -57,11 +58,18 @@ class EtapaTts(Protocol):
 class FlujoOutgoing:
     """Orquesta un turno: segmento final → traducción → TTS (escalera) → ruteo.
 
-    El hilo del micrófono es el único alimentador (contrato de un solo
-    productor): `segmento_final` y `parcial` se llaman desde el mismo hilo.
-    La cancelación es por número de turno: `cancelar_turno_activo()` (o un
-    nuevo `segmento_final`) invalida el turno en curso; si una etapa terminó,
-    el turno superado NO enruta audio ni muestra texto como final.
+    Contrato de hilos (corregido en la revisión del PR #22): RealtimeSTT
+    entrega parciales y finales desde SUS propios hilos, y cada `segmento_final`
+    corre en un hilo worker del adaptador. Por eso el core es seguro bajo
+    concurrencia:
+    - el contador de turnos y el turno activo se mutan bajo `_lock`;
+    - la cancelación (`cancelar_turno_activo`, invocada por el callback de
+      parciales cuando el usuario vuelve a hablar) y el arranque de un turno
+      nuevo invalidan el turno en vuelo: el check `turno != self._turno_activo`
+      (lectura atómica) descarta su audio y su texto según el momento;
+    - la ventana de carrera restante (cancelar justo entre el check y el ruteo)
+      es la duración de una escritura al cable: se documenta, no se promete
+      cero.
     """
 
     traducir: Callable[[str], str]
@@ -74,22 +82,26 @@ class FlujoOutgoing:
     ultimo_turno_total_ms: float = field(default=0.0, init=False)
     _numero_turno: int = field(default=0, init=False)
     _turno_activo: int | None = field(default=None, init=False)
+    _lock: Any = field(default_factory=threading.Lock, init=False, repr=False)
 
     def parcial(self, texto_es: str) -> None:
         """Parcial del ASR: SOLO a pantalla (regla del ADR-015)."""
         self.teleprompter.parcial(texto_es)
 
     def cancelar_turno_activo(self) -> None:
-        """Cancela el turno en curso (lo llama el adaptador del micrófono
-        cuando detecta un nuevo segmento durante una síntesis)."""
-        self._turno_activo = None
+        """Cancela el turno en curso. Lo invoca el callback de PARCIALES del
+        micrófono cuando el usuario vuelve a hablar: la síntesis del turno
+        anterior queda invalidada y su audio no se enruta."""
+        with self._lock:
+            self._turno_activo = None
 
     def segmento_final(self, texto_es: str) -> int | None:
         """Procesa un segmento final; devuelve el nivel de la escalera usado
         (None si el turno fue cancelado antes de enrutar)."""
-        self._numero_turno += 1
-        turno = self._numero_turno
-        self._turno_activo = turno
+        with self._lock:
+            self._numero_turno += 1
+            turno = self._numero_turno
+            self._turno_activo = turno
         etapas = RegistroEtapas(clock=self.reloj)
         etapas.marcar("entrada")
         texto_en = self.traducir(texto_es)

@@ -197,6 +197,28 @@ def test_timestamps_por_etapa_cierre_exacto() -> None:
     assert sum(etapas.values()) == pytest.approx(flujo.ultimo_turno_total_ms)
 
 
+def test_segmentos_concurrentes_no_pierden_turnos() -> None:
+    """Dos hilos despachando finales (el contrato real de RealtimeSTT): el
+    contador de turnos no pierde incrementos — el lock del core lo garantiza;
+    y cada turno termina enrutan o cancelado, nunca a medias."""
+    import threading
+
+    flujo, _teleprompter, salida = _flujo()
+
+    def despachar() -> None:
+        for _ in range(50):
+            flujo.segmento_final("texto")
+
+    h1 = threading.Thread(target=despachar)
+    h2 = threading.Thread(target=despachar)
+    h1.start()
+    h2.start()
+    h1.join()
+    h2.join()
+    assert flujo._numero_turno == 100
+    assert len(salida.reproducidos) == 100  # ninguno quedó a medias
+
+
 def test_validar_arranque_pasa_con_traduccion_sana() -> None:
     salud = validar_arranque(lambda es: "my strongest experience is with distributed systems")
     assert salud == Salud(disponible=True, detalle="")
